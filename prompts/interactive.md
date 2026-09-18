@@ -17,8 +17,11 @@ The following CLI steps replace the contract's MCP send/wait steps.
 
 1. Read the shared task and filtered inbox:
    `%CLI% status --repo %QUOTED_REPO% --agent %AGENT%`
-2. Do the actual thinking, reading, editing, and testing in this visible session.
-   Summarize checkable evidence, not private chain-of-thought. Before editing:
+2. Follow `session.nextAction`. If it says `wait`, go directly to step 4; do not
+   manufacture another message. Do the actual reading, implementation, and testing
+   in this visible session. Keep shared source and test files unchanged during
+   the independent phase; share your proposed edits in `solution`. During
+   discussion, claim paths before editing:
    `%CLI% claim --repo %QUOTED_REPO% --agent %AGENT% --files path/to/file`
    Release your claims with `release` when finished.
 3. Submit exactly one JSON contribution for the current round using
@@ -35,9 +38,12 @@ The following CLI steps replace the contract's MCP send/wait steps.
    Read its returned JSON, show what your peer contributed, and take your next
    turn. If it times out while still waiting, return control to the user rather
    than retrying forever. The user can say “continue collaboration” to resume.
-5. To verify a file-backed candidate, use:
+5. Before accepting a file-backed candidate, run each configured check using
+   its actual candidate ID and check name:
    `%CLI% verify --repo %QUOTED_REPO% --agent %AGENT% --candidate m1 --check NAME`
-   Use a check name from status. Never accept a stale candidate or a failed check.
+   Read the returned result. A shell command you have not run is a proposed check,
+   not evidence. Never accept a stale candidate or a failed check. A code change
+   must be implemented and included in the proposal before accepting it.
 6. Stop on `paused`, `converged`, `blocked`, `exhausted`, or `stopped`. If the user
    interrupts, their newest instruction takes priority. To share a correction
    with both peers, use `%CLI% note --repo %QUOTED_REPO% "User correction"`.

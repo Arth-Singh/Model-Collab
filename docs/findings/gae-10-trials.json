@@ -1,0 +1,815 @@
+{
+  "study": "Ten repeated trials of one GAE programming task",
+  "sourceCommit": "58b9429",
+  "startedAt": "2026-09-18T20:43:08.795Z",
+  "completedAt": "2026-09-18T21:34:13.883Z",
+  "manifestHash": "62b719794dfcc941d1561fa0007664ade9b7e436ebf52d29b5549ebf1fa53327",
+  "reportSha256": "ad53d0e3cd35a9b9619688291f319a336c37a945564eefa3651dce3abb15f6c5",
+  "models": {
+    "codex": "gpt-6-astra",
+    "claude": "claude-fable-5-1[1m]"
+  },
+  "requestedEffort": "xhigh",
+  "cliVersions": {
+    "codex": "0.154.0",
+    "claude": "2.1.277"
+  },
+  "trials": 10,
+  "invocationsPerCondition": 4,
+  "counters": {
+    "scheduled": 160,
+    "attempted": 160,
+    "launched": 160,
+    "launchUnknown": 0,
+    "skipped": 0
+  },
+  "wallSeconds": 3065.088,
+  "modelSamplingSeed": null,
+  "task": {
+    "id": "rl-gae-boundaries",
+    "title": "GAE across termination, truncation, and rollout boundaries",
+    "suite": "rl",
+    "specification": "Implement synchronous function solve(data) returning {advantages, returns}.\ndata has equal-length arrays rewards, values, nextValues, terminated, truncated and scalars gamma, lambda in [0,1]. Length is 0..300. Numerical inputs are finite. nextValues[t] is the value of the actual next/final observation for transition t, NOT the reset observation. Adjacent transitions after a termination or truncation may belong to a new episode.\nUse delta[t] = rewards[t] + gamma*(1-terminated[t])*nextValues[t] - values[t]. GAE sums discounted future deltas with multiplier gamma*lambda while staying in the SAME episode. Both termination and truncation stop propagation to the next transition. Only termination suppresses bootstrap in the current delta. If both flags are true, termination wins. At the end of the available rollout, the future GAE tail is zero but nextValues still provides the final bootstrap. returns[t] = advantages[t]+values[t]. Do not normalize advantages. Empty arrays produce empty arrays.",
+    "sources": [
+      "https://arxiv.org/html/1506.02438v6",
+      "https://gymnasium.farama.org/tutorials/gymnasium_basics/handling_time_limits/"
+    ],
+    "specificationHash": "573c39b868ee0d8c72803e9625b413d7a1965bcdb58fa6c3956512daf71c33e6"
+  },
+  "rows": [
+    {
+      "mode": "solo-codex",
+      "planned": 10,
+      "complete": 10,
+      "correct": 10,
+      "observedCorrectFinals": 10,
+      "latencySeconds": {
+        "n": 10,
+        "mean": 94.40469999999999,
+        "sd": 11.89203939196301,
+        "min": 80.165,
+        "max": 112.249
+      },
+      "wallSeconds": {
+        "n": 10,
+        "mean": 94.4958,
+        "sd": 11.890458189470898,
+        "min": 80.26,
+        "max": 112.337
+      },
+      "tokensPerCompleteRun": {
+        "n": 10,
+        "mean": 48382.9,
+        "sd": 387.8967359720597,
+        "min": 47836,
+        "max": 48968
+      },
+      "knownTokenTotal": 483829,
+      "knownUsageCalls": 40,
+      "attemptedCalls": 40,
+      "launchedCalls": 40,
+      "failures": 0,
+      "trials": [
+        {
+          "trial": 1,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 81.329,
+          "solveSeconds": 81.236,
+          "tokens": 47962,
+          "finalProvider": "codex"
+        },
+        {
+          "trial": 2,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 80.26,
+          "solveSeconds": 80.165,
+          "tokens": 47836,
+          "finalProvider": "codex"
+        },
+        {
+          "trial": 3,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 105.658,
+          "solveSeconds": 105.567,
+          "tokens": 48590,
+          "finalProvider": "codex"
+        },
+        {
+          "trial": 4,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 86.671,
+          "solveSeconds": 86.57,
+          "tokens": 48213,
+          "finalProvider": "codex"
+        },
+        {
+          "trial": 5,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 112.337,
+          "solveSeconds": 112.249,
+          "tokens": 48968,
+          "finalProvider": "codex"
+        },
+        {
+          "trial": 6,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 91.62,
+          "solveSeconds": 91.53,
+          "tokens": 48301,
+          "finalProvider": "codex"
+        },
+        {
+          "trial": 7,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 87.554,
+          "solveSeconds": 87.465,
+          "tokens": 48242,
+          "finalProvider": "codex"
+        },
+        {
+          "trial": 8,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 106.389,
+          "solveSeconds": 106.3,
+          "tokens": 48756,
+          "finalProvider": "codex"
+        },
+        {
+          "trial": 9,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 106.208,
+          "solveSeconds": 106.117,
+          "tokens": 48854,
+          "finalProvider": "codex"
+        },
+        {
+          "trial": 10,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 86.932,
+          "solveSeconds": 86.848,
+          "tokens": 48107,
+          "finalProvider": "codex"
+        }
+      ]
+    },
+    {
+      "mode": "solo-claude",
+      "planned": 10,
+      "complete": 10,
+      "correct": 10,
+      "observedCorrectFinals": 10,
+      "latencySeconds": {
+        "n": 10,
+        "mean": 105.0219,
+        "sd": 14.262990908486044,
+        "min": 89.382,
+        "max": 133.222
+      },
+      "wallSeconds": {
+        "n": 10,
+        "mean": 105.10469999999998,
+        "sd": 14.263265802208286,
+        "min": 89.457,
+        "max": 133.307
+      },
+      "tokensPerCompleteRun": {
+        "n": 10,
+        "mean": 31779.8,
+        "sd": 1685.6651703902132,
+        "min": 29959,
+        "max": 34940
+      },
+      "knownTokenTotal": 317798,
+      "knownUsageCalls": 40,
+      "attemptedCalls": 40,
+      "launchedCalls": 40,
+      "failures": 0,
+      "trials": [
+        {
+          "trial": 1,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 103.228,
+          "solveSeconds": 103.141,
+          "tokens": 31726,
+          "finalProvider": "claude"
+        },
+        {
+          "trial": 2,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 92.838,
+          "solveSeconds": 92.753,
+          "tokens": 31767,
+          "finalProvider": "claude"
+        },
+        {
+          "trial": 3,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 91.986,
+          "solveSeconds": 91.896,
+          "tokens": 30413,
+          "finalProvider": "claude"
+        },
+        {
+          "trial": 4,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 133.307,
+          "solveSeconds": 133.222,
+          "tokens": 34940,
+          "finalProvider": "claude"
+        },
+        {
+          "trial": 5,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 112.343,
+          "solveSeconds": 112.258,
+          "tokens": 31928,
+          "finalProvider": "claude"
+        },
+        {
+          "trial": 6,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 89.457,
+          "solveSeconds": 89.382,
+          "tokens": 29959,
+          "finalProvider": "claude"
+        },
+        {
+          "trial": 7,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 123.675,
+          "solveSeconds": 123.594,
+          "tokens": 34443,
+          "finalProvider": "claude"
+        },
+        {
+          "trial": 8,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 105.147,
+          "solveSeconds": 105.072,
+          "tokens": 31594,
+          "finalProvider": "claude"
+        },
+        {
+          "trial": 9,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 101.163,
+          "solveSeconds": 101.082,
+          "tokens": 30362,
+          "finalProvider": "claude"
+        },
+        {
+          "trial": 10,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 97.903,
+          "solveSeconds": 97.819,
+          "tokens": 30666,
+          "finalProvider": "claude"
+        }
+      ]
+    },
+    {
+      "mode": "independent-pair",
+      "planned": 10,
+      "complete": 10,
+      "correct": 10,
+      "observedCorrectFinals": 10,
+      "latencySeconds": {
+        "n": 10,
+        "mean": 53.983000000000004,
+        "sd": 7.074406610372978,
+        "min": 43.171,
+        "max": 66.104
+      },
+      "wallSeconds": {
+        "n": 10,
+        "mean": 54.0706,
+        "sd": 7.07340550073144,
+        "min": 43.247,
+        "max": 66.191
+      },
+      "tokensPerCompleteRun": {
+        "n": 10,
+        "mean": 38501.5,
+        "sd": 828.6000576608449,
+        "min": 37583,
+        "max": 39909
+      },
+      "knownTokenTotal": 385015,
+      "knownUsageCalls": 40,
+      "attemptedCalls": 40,
+      "launchedCalls": 40,
+      "failures": 0,
+      "trials": [
+        {
+          "trial": 1,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 48.97,
+          "solveSeconds": 48.865,
+          "tokens": 37749,
+          "finalProvider": "claude"
+        },
+        {
+          "trial": 2,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 63.017,
+          "solveSeconds": 62.933,
+          "tokens": 39147,
+          "finalProvider": "codex"
+        },
+        {
+          "trial": 3,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 52.777,
+          "solveSeconds": 52.681,
+          "tokens": 38959,
+          "finalProvider": "claude"
+        },
+        {
+          "trial": 4,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 52.162,
+          "solveSeconds": 52.066,
+          "tokens": 38259,
+          "finalProvider": "codex"
+        },
+        {
+          "trial": 5,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 51.924,
+          "solveSeconds": 51.834,
+          "tokens": 39319,
+          "finalProvider": "claude"
+        },
+        {
+          "trial": 6,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 66.191,
+          "solveSeconds": 66.104,
+          "tokens": 39909,
+          "finalProvider": "codex"
+        },
+        {
+          "trial": 7,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 47.298,
+          "solveSeconds": 47.215,
+          "tokens": 37715,
+          "finalProvider": "claude"
+        },
+        {
+          "trial": 8,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 57.71,
+          "solveSeconds": 57.641,
+          "tokens": 38744,
+          "finalProvider": "codex"
+        },
+        {
+          "trial": 9,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 57.41,
+          "solveSeconds": 57.32,
+          "tokens": 37631,
+          "finalProvider": "claude"
+        },
+        {
+          "trial": 10,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 43.247,
+          "solveSeconds": 43.171,
+          "tokens": 37583,
+          "finalProvider": "codex"
+        }
+      ]
+    },
+    {
+      "mode": "collaboration",
+      "planned": 10,
+      "complete": 10,
+      "correct": 10,
+      "observedCorrectFinals": 10,
+      "latencySeconds": {
+        "n": 10,
+        "mean": 52.64520000000001,
+        "sd": 9.265283707354989,
+        "min": 41.194,
+        "max": 70.361
+      },
+      "wallSeconds": {
+        "n": 10,
+        "mean": 52.73760000000001,
+        "sd": 9.26154556576097,
+        "min": 41.293,
+        "max": 70.453
+      },
+      "tokensPerCompleteRun": {
+        "n": 10,
+        "mean": 38360.7,
+        "sd": 664.6663406886529,
+        "min": 37419,
+        "max": 39762
+      },
+      "knownTokenTotal": 383607,
+      "knownUsageCalls": 40,
+      "attemptedCalls": 40,
+      "launchedCalls": 40,
+      "failures": 0,
+      "trials": [
+        {
+          "trial": 1,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 46.874,
+          "solveSeconds": 46.763,
+          "tokens": 37908,
+          "finalProvider": "claude"
+        },
+        {
+          "trial": 2,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 46.384,
+          "solveSeconds": 46.289,
+          "tokens": 38098,
+          "finalProvider": "codex"
+        },
+        {
+          "trial": 3,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 57.889,
+          "solveSeconds": 57.794,
+          "tokens": 38499,
+          "finalProvider": "claude"
+        },
+        {
+          "trial": 4,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 70.453,
+          "solveSeconds": 70.361,
+          "tokens": 39048,
+          "finalProvider": "codex"
+        },
+        {
+          "trial": 5,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 41.293,
+          "solveSeconds": 41.194,
+          "tokens": 37795,
+          "finalProvider": "claude"
+        },
+        {
+          "trial": 6,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 56.615,
+          "solveSeconds": 56.524,
+          "tokens": 39762,
+          "finalProvider": "codex"
+        },
+        {
+          "trial": 7,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 47.326,
+          "solveSeconds": 47.237,
+          "tokens": 38207,
+          "finalProvider": "claude"
+        },
+        {
+          "trial": 8,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 42.617,
+          "solveSeconds": 42.526,
+          "tokens": 37419,
+          "finalProvider": "codex"
+        },
+        {
+          "trial": 9,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 59.868,
+          "solveSeconds": 59.785,
+          "tokens": 38384,
+          "finalProvider": "claude"
+        },
+        {
+          "trial": 10,
+          "status": "complete",
+          "outcome": "correct",
+          "passed": 27,
+          "total": 27,
+          "wallSeconds": 58.057,
+          "solveSeconds": 57.979,
+          "tokens": 38487,
+          "finalProvider": "codex"
+        }
+      ]
+    }
+  ],
+  "paired": [
+    {
+      "baseline": "solo-codex",
+      "completePairs": 10,
+      "accuracyDifference": 0,
+      "wallSecondsDifference": {
+        "n": 10,
+        "mean": -41.7582,
+        "sd": 16.265436318224676,
+        "min": -71.044,
+        "max": -16.218
+      },
+      "differences": [
+        {
+          "trial": 1,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": -34.455
+        },
+        {
+          "trial": 2,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": -33.876
+        },
+        {
+          "trial": 3,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": -47.769
+        },
+        {
+          "trial": 4,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": -16.218
+        },
+        {
+          "trial": 5,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": -71.044
+        },
+        {
+          "trial": 6,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": -35.005
+        },
+        {
+          "trial": 7,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": -40.228
+        },
+        {
+          "trial": 8,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": -63.772
+        },
+        {
+          "trial": 9,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": -46.34
+        },
+        {
+          "trial": 10,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": -28.875
+        }
+      ]
+    },
+    {
+      "baseline": "solo-claude",
+      "completePairs": 10,
+      "accuracyDifference": 0,
+      "wallSecondsDifference": {
+        "n": 10,
+        "mean": -52.36709999999999,
+        "sd": 15.573115862137403,
+        "min": -76.349,
+        "max": -32.842
+      },
+      "differences": [
+        {
+          "trial": 1,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": -56.354
+        },
+        {
+          "trial": 2,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": -46.454
+        },
+        {
+          "trial": 3,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": -34.097
+        },
+        {
+          "trial": 4,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": -62.854
+        },
+        {
+          "trial": 5,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": -71.05
+        },
+        {
+          "trial": 6,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": -32.842
+        },
+        {
+          "trial": 7,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": -76.349
+        },
+        {
+          "trial": 8,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": -62.53
+        },
+        {
+          "trial": 9,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": -41.295
+        },
+        {
+          "trial": 10,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": -39.846
+        }
+      ]
+    },
+    {
+      "baseline": "independent-pair",
+      "completePairs": 10,
+      "accuracyDifference": 0,
+      "wallSecondsDifference": {
+        "n": 10,
+        "mean": -1.333,
+        "sd": 11.934401600229293,
+        "min": -16.633,
+        "max": 18.291
+      },
+      "differences": [
+        {
+          "trial": 1,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": -2.096
+        },
+        {
+          "trial": 2,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": -16.633
+        },
+        {
+          "trial": 3,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": 5.112
+        },
+        {
+          "trial": 4,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": 18.291
+        },
+        {
+          "trial": 5,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": -10.631
+        },
+        {
+          "trial": 6,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": -9.576
+        },
+        {
+          "trial": 7,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": 0.028
+        },
+        {
+          "trial": 8,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": -15.093
+        },
+        {
+          "trial": 9,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": 2.458
+        },
+        {
+          "trial": 10,
+          "accuracyDifference": 0,
+          "wallSecondsDifference": 14.81
+        }
+      ]
+    }
+  ]
+}

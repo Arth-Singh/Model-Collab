@@ -9,6 +9,11 @@ Each peer first proposes independently. The filtered API withholds the other
 proposal until all peers have contributed. Discussion then advances in rounds,
 with at most one contribution from each peer in a round.
 
+The prompts keep shared source and test files unchanged during the independent
+phase, so one peer's edits do not reveal its proposed fix to the other. Peers then
+claim paths and implement during discussion. This is a cooperation rule; the
+filesystem does not enforce it.
+
 A proposal describes a concrete solution. A challenge names an objection to a
 proposal; only its author can close that objection. Evidence messages add a
 check, counterexample, or answer. Each peer must explicitly accept the same

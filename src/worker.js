@@ -73,8 +73,8 @@ export async function nativeTurn({
 You are ${agent}. This process performs exactly ONE contribution, then exits. The worker handles delivery and wake-up.
 Use collab_status if you need a fresh view; claim files before editing, release after editing, and use collab_verify for configured checks.
 Do not call collab_post, collab_start, collab_stop, collab_wait, or the model-collab CLI. Do not read or edit .collab/state.json, README.md, messages.jsonl, history, or worker logs; the filtered view below contains all permitted peer context.
-Return the message itself as JSON matching the output schema, with null for unused optional strings. Do not include clientMessageId; the worker adds it.
-During independent phase propose your own solution. During discussion review existing candidates: accept an existing valid candidate when supported; challenge it with concrete evidence otherwise. If two candidates have identical substance, prefer the lexicographically smaller candidate ID as a neutral tie-break, not a preferred agent. Do not create an equivalent replacement candidate merely to claim ownership.
+Return the message itself as JSON matching the output schema, with null for unused optional strings. Do not include clientMessageId, sessionId, or contextVersion; the worker binds these to the captured turn.
+During independent phase propose your own solution without changing shared source or test files. During discussion follow the peer contract's contribution rules: inspect artifacts, resolve material uncertainty, implement when needed, and accept only a candidate that meets the goal. No need to manufacture a challenge when the evidence supports acceptance.
 No background agents or recursive CLI calls. Respect the user's repository scope and normal repository instructions.
 \nSHARED CONTEXT\n${context}\n\nFILTERED SESSION\n${JSON.stringify(state)}\n`;
   const args =

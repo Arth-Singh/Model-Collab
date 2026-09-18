@@ -127,6 +127,20 @@ model-collab up "Fix the failing tests" \
 Existing projects retain their saved settings. See [configuration](docs/configuration.md)
 for limits, checks, and alternate workflows.
 
+## Early findings
+
+In ten repeated trials of one GAE programming task, all four setups solved every
+trial. The collaborating pair averaged 52.7 seconds; the independent pair averaged
+54.1 seconds. This task showed no accuracy advantage from collaboration. Pair
+rounds ran in parallel, while solo refinement was sequential.
+
+![Correctness and wall time across ten trials](docs/findings/gae-10-trials.svg)
+
+See [results and method](docs/findings.md) for per-trial data and limitations, or
+[download the figure](docs/findings/gae-10-trials.png). This bounded benchmark used
+a separate answer-exchange prompt; it does not evaluate the current terminal
+workflow or the revised collaboration prompts.
+
 ## Documentation
 
 - [Usage](docs/usage.md): existing panes, project context, and unattended sessions
