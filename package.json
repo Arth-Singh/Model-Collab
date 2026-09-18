@@ -1,14 +1,46 @@
 {
   "name": "@arth-singh/model-collab",
-  "version": "0.1.0",
-  "description": "Bounded, evidence-led peer collaboration for Codex and Claude Code",
+  "version": "0.2.0",
+  "description": "Run Codex and Claude Code together in your terminal",
   "type": "module",
-  "bin": { "model-collab": "bin/model-collab.js" },
-  "exports": { ".": "./src/core.js" },
-  "files": ["bin", "src", "prompts", "schemas", "eval", "examples", "docs", "README.md", "LICENSE"],
-  "scripts": { "test": "node --test", "check": "node --check bin/model-collab.js && node --check src/core.js && node --check src/server.js", "eval": "node bin/model-collab.js eval" },
-  "engines": { "node": ">=22.12" },
-  "repository": { "type": "git", "url": "git+https://github.com/Arth-Singh/Model-Collab.git" },
+  "bin": {
+    "model-collab": "bin/model-collab.js"
+  },
+  "exports": {
+    ".": "./src/core.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "prompts",
+    "schemas",
+    "docs",
+    "README.md",
+    "LICENSE",
+    "CONTRIBUTING.md",
+    "scripts/check.js"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "check": "node scripts/check.js",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Arth-Singh/Model-Collab.git"
+  },
   "license": "MIT",
-  "dependencies": { "@modelcontextprotocol/sdk": "^1.30.0", "commander": "^15.0.0", "proper-lockfile": "^4.1.2", "zod": "^4.6.5" }
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "commander": "^15.0.0",
+    "proper-lockfile": "^4.1.2",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "prettier": "3.9.8"
+  }
 }

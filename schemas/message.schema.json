@@ -14,13 +14,7 @@
     },
     "kind": {
       "type": "string",
-      "enum": [
-        "proposal",
-        "challenge",
-        "evidence",
-        "accept",
-        "blocked"
-      ]
+      "enum": ["proposal", "challenge", "evidence", "accept", "blocked"]
     },
     "summary": {
       "type": "string",
@@ -69,10 +63,6 @@
       }
     }
   },
-  "required": [
-    "clientMessageId",
-    "kind",
-    "summary"
-  ],
+  "required": ["clientMessageId", "kind", "summary"],
   "additionalProperties": false
 }

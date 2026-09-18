@@ -9,55 +9,112 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { Collaboration } from '../src/core.js';
 
 const cli = fileURLToPath(new URL('../bin/model-collab.js', import.meta.url));
-const decoded = result => {
+const decoded = (result) => {
   assert.equal(result.isError, undefined, result.content[0]?.text);
   return JSON.parse(result.content[0].text);
 };
 
-test('two real MCP clients exchange sealed proposals and converge with fixed participant identities', async t => {
+test('two real MCP clients exchange sealed proposals and converge with fixed participant identities', async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'model-collab-mcp-'));
   const clients = [];
   t.after(async () => {
-    await Promise.all(clients.map(client => client.close()));
+    await Promise.all(clients.map((client) => client.close()));
     await fs.rm(root, { recursive: true, force: true });
   });
   await new Collaboration(root).init();
   for (const agent of ['codex', 'claude']) {
     const client = new Client({ name: `test-${agent}`, version: '1.0.0' });
     clients.push(client);
-    await client.connect(new StdioClientTransport({ command: process.execPath, args: [cli, 'serve', '--repo', root, '--agent', agent], stderr: 'pipe' }));
+    await client.connect(
+      new StdioClientTransport({
+        command: process.execPath,
+        args: [cli, 'serve', '--repo', root, '--agent', agent],
+        stderr: 'pipe',
+      }),
+    );
     assert.match(client.getInstructions(), new RegExp(`equal peer ${agent}`));
   }
   const [codex, claude] = clients;
-  const tools = (await codex.listTools()).tools.map(tool => tool.name);
-  assert.deepEqual(tools.sort(), ['collab_claim', 'collab_post', 'collab_release', 'collab_start', 'collab_status', 'collab_stop', 'collab_verify', 'collab_wait']);
-  const started = decoded(await claude.callTool({ name: 'collab_start', arguments: { topic: 'Agree on half-open interval overlap' } }));
+  const tools = (await codex.listTools()).tools.map((tool) => tool.name);
+  assert.deepEqual(tools.sort(), [
+    'collab_claim',
+    'collab_post',
+    'collab_release',
+    'collab_start',
+    'collab_status',
+    'collab_stop',
+    'collab_verify',
+    'collab_wait',
+  ]);
+  const started = decoded(
+    await claude.callTool({
+      name: 'collab_start',
+      arguments: { topic: 'Agree on half-open interval overlap' },
+    }),
+  );
   const sessionId = started.session.id;
-  const first = decoded(await codex.callTool({ name: 'collab_post', arguments: {
-    sessionId,
-    clientMessageId: 'mcp-codex-proposal', kind: 'proposal', summary: 'Use strict inequality', evidence: ['Adjacent intervals share no included point.'], solution: 'max(start) < min(end)',
-  } }));
+  const first = decoded(
+    await codex.callTool({
+      name: 'collab_post',
+      arguments: {
+        sessionId,
+        clientMessageId: 'mcp-codex-proposal',
+        kind: 'proposal',
+        summary: 'Use strict inequality',
+        evidence: ['Adjacent intervals share no included point.'],
+        solution: 'max(start) < min(end)',
+      },
+    }),
+  );
   const sealed = decoded(await claude.callTool({ name: 'collab_status', arguments: {} }));
   assert.deepEqual(sealed.session.messages, []);
   assert.deepEqual(sealed.session.candidates, []);
-  const rejected = await codex.callTool({ name: 'collab_post', arguments: {
-    sessionId,
-    clientMessageId: 'mcp-codex-too-early', kind: 'evidence', summary: 'Duplicate contribution', evidence: ['No new peer contribution.'],
-  } });
+  const rejected = await codex.callTool({
+    name: 'collab_post',
+    arguments: {
+      sessionId,
+      clientMessageId: 'mcp-codex-too-early',
+      kind: 'evidence',
+      summary: 'Duplicate contribution',
+      evidence: ['No new peer contribution.'],
+    },
+  });
   assert.equal(rejected.isError, true);
   assert.match(rejected.content[0].text, /already contributed/);
-  decoded(await claude.callTool({ name: 'collab_post', arguments: {
-    sessionId,
-    clientMessageId: 'mcp-claude-proposal', kind: 'proposal', summary: 'Use nonempty intersection', evidence: ['[1,2) intersects [2,3) in the empty set.'],
-  } }));
+  decoded(
+    await claude.callTool({
+      name: 'collab_post',
+      arguments: {
+        sessionId,
+        clientMessageId: 'mcp-claude-proposal',
+        kind: 'proposal',
+        summary: 'Use nonempty intersection',
+        evidence: ['[1,2) intersects [2,3) in the empty set.'],
+      },
+    }),
+  );
   const shared = decoded(await codex.callTool({ name: 'collab_status', arguments: {} }));
-  assert.deepEqual(shared.session.messages.map(message => message.agent), ['codex', 'claude']);
-  for (const [client, agent] of [[codex, 'codex'], [claude, 'claude']]) {
-    decoded(await client.callTool({ name: 'collab_post', arguments: {
-      sessionId,
-      clientMessageId: `mcp-${agent}-acceptance`, kind: 'accept', candidate: first.message.id,
-      summary: 'Boundary examples agree', evidence: ['[1,2) and [2,3) do not overlap under strict inequality.'],
-    } }));
+  assert.deepEqual(
+    shared.session.messages.map((message) => message.agent),
+    ['codex', 'claude'],
+  );
+  for (const [client, agent] of [
+    [codex, 'codex'],
+    [claude, 'claude'],
+  ]) {
+    decoded(
+      await client.callTool({
+        name: 'collab_post',
+        arguments: {
+          sessionId,
+          clientMessageId: `mcp-${agent}-acceptance`,
+          kind: 'accept',
+          candidate: first.message.id,
+          summary: 'Boundary examples agree',
+          evidence: ['[1,2) and [2,3) do not overlap under strict inequality.'],
+        },
+      }),
+    );
   }
   const final = decoded(await claude.callTool({ name: 'collab_status', arguments: {} }));
   assert.equal(final.session.status, 'converged');
@@ -65,7 +122,7 @@ test('two real MCP clients exchange sealed proposals and converge with fixed par
   assert.deepEqual(final.session.votes, { codex: first.message.id, claude: first.message.id });
 });
 
-test('MCP requires an observed session ID and rejects stale proposals and votes after replacement', async t => {
+test('MCP requires an observed session ID and rejects stale proposals and votes after replacement', async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'model-collab-mcp-session-'));
   const collab = new Collaboration(root);
   const client = new Client({ name: 'test-session-binding', version: '1.0.0' });
@@ -76,13 +133,31 @@ test('MCP requires an observed session ID and rejects stale proposals and votes 
   await collab.init();
   const started = await collab.start({ topic: 'Goal A' });
   const sessionId = started.session.id;
-  await client.connect(new StdioClientTransport({ command: process.execPath, args: [cli, 'serve', '--repo', root, '--agent', 'codex'], stderr: 'pipe' }));
-  const schema = (await client.listTools()).tools.find(tool => tool.name === 'collab_post').inputSchema;
+  await client.connect(
+    new StdioClientTransport({
+      command: process.execPath,
+      args: [cli, 'serve', '--repo', root, '--agent', 'codex'],
+      stderr: 'pipe',
+    }),
+  );
+  const schema = (await client.listTools()).tools.find(
+    (tool) => tool.name === 'collab_post',
+  ).inputSchema;
   assert.ok(schema.required.includes('sessionId'));
-  const body = { clientMessageId: 'mcp-session-proposal', contextVersion: 0, kind: 'proposal', summary: 'A candidate for the observed goal.', evidence: ['Reviewed that goal.'] };
-  const post = args => client.callTool({ name: 'collab_post', arguments: args });
+  const body = {
+    clientMessageId: 'mcp-session-proposal',
+    contextVersion: 0,
+    kind: 'proposal',
+    summary: 'A candidate for the observed goal.',
+    evidence: ['Reviewed that goal.'],
+  };
+  const post = (args) => client.callTool({ name: 'collab_post', arguments: args });
   const beforeInvalid = await fs.readFile(collab.file, 'utf8');
-  for (const args of [body, { ...body, sessionId: '' }, { ...body, sessionId: 'not-a-session-id' }]) {
+  for (const args of [
+    body,
+    { ...body, sessionId: '' },
+    { ...body, sessionId: 'not-a-session-id' },
+  ]) {
     const rejected = await post(args);
     assert.equal(rejected.isError, true);
     assert.match(rejected.content[0].text, /sessionId|UUID/i);
@@ -95,7 +170,14 @@ test('MCP requires an observed session ID and rejects stale proposals and votes 
   assert.deepEqual(retry.message, original.message);
   assert.equal(await fs.readFile(collab.file, 'utf8'), beforeRetry);
   await collab.post('claude', { ...body, clientMessageId: 'mcp-session-peer-a' });
-  const staleVote = { clientMessageId: 'mcp-session-old-vote', contextVersion: 0, kind: 'accept', candidate: original.message.id, summary: 'Accept the reviewed candidate.', evidence: ['Reviewed the candidate in goal A.'] };
+  const staleVote = {
+    clientMessageId: 'mcp-session-old-vote',
+    contextVersion: 0,
+    kind: 'accept',
+    candidate: original.message.id,
+    summary: 'Accept the reviewed candidate.',
+    evidence: ['Reviewed the candidate in goal A.'],
+  };
   await collab.stop('Replace the goal.');
   const replacement = await collab.start({ topic: 'Goal B' });
   assert.notEqual(replacement.session.id, sessionId);
@@ -115,9 +197,18 @@ test('MCP requires an observed session ID and rejects stale proposals and votes 
     assert.match(rejected.content[0].text, /Active session changed/);
     assert.equal(await fs.readFile(collab.file, 'utf8'), beforeVote);
   }
-  const currentVote = { ...staleVote, clientMessageId: 'mcp-session-new-vote', evidence: ['Independently reviewed the candidate in goal B.'], sessionId: replacement.session.id };
+  const currentVote = {
+    ...staleVote,
+    clientMessageId: 'mcp-session-new-vote',
+    evidence: ['Independently reviewed the candidate in goal B.'],
+    sessionId: replacement.session.id,
+  };
   decoded(await post(currentVote));
-  const final = await collab.post('claude', { ...staleVote, clientMessageId: 'mcp-session-peer-vote', evidence: ['Reviewed the candidate in goal B.'] });
+  const final = await collab.post('claude', {
+    ...staleVote,
+    clientMessageId: 'mcp-session-peer-vote',
+    evidence: ['Reviewed the candidate in goal B.'],
+  });
   assert.equal(final.status, 'converged');
   assert.equal(decoded(await post(currentVote)).duplicate, true);
 });

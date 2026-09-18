@@ -13,8 +13,11 @@ const execFileAsync = promisify(execFile);
 const cli = fileURLToPath(new URL('../bin/model-collab.js', import.meta.url));
 let serial = 0;
 const message = (kind, extra = {}) => ({
-  clientMessageId: `test-message-${++serial}`, kind, summary: `${kind} backed by a check`,
-  evidence: ['Boundary example produces the expected result.'], ...extra,
+  clientMessageId: `test-message-${++serial}`,
+  kind,
+  summary: `${kind} backed by a check`,
+  evidence: ['Boundary example produces the expected result.'],
+  ...extra,
 });
 
 async function fixture(t, config = {}) {
@@ -22,7 +25,10 @@ async function fixture(t, config = {}) {
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const collab = new Collaboration(root);
   await collab.init(config);
-  await collab.start({ topic: 'Implement a correct interval intersection.', successCriteria: ['Adjacent intervals do not overlap.'] });
+  await collab.start({
+    topic: 'Implement a correct interval intersection.',
+    successCriteria: ['Adjacent intervals do not overlap.'],
+  });
   return { root, collab };
 }
 
@@ -32,10 +38,44 @@ async function independent(collab, extra = {}) {
   return [first.message.id, second.message.id];
 }
 
-test('independent proposals remain sealed until every peer submits; each peer gets one contribution per round', async t => {
+test('settings change only between goals and preserve prior conversation history', async (t) => {
+  const { collab } = await fixture(t);
+  await independent(collab);
+  const current = await fs.readFile(collab.file, 'utf8');
+  await assert.rejects(collab.configure({ maxRounds: 6 }), /Stop the current/);
+  assert.equal(await fs.readFile(collab.file, 'utf8'), current);
+  await collab.pause();
+  await assert.rejects(collab.configure({ maxRounds: 6 }), /Stop the current/);
+  await collab.stop('Change settings for the next task.');
+  const previous = JSON.parse(await fs.readFile(collab.file, 'utf8'));
+  const updated = await collab.configure({
+    preset: 'research',
+    maxRounds: 6,
+    deadlineMinutes: 45,
+    checks: { test: ['node', '--version'] },
+  });
+  assert.deepEqual(updated.session, previous.session);
+  assert.equal(updated.config.maxRounds, 6);
+  assert.equal(updated.config.preset, 'research');
+  const beforeInvalid = await fs.readFile(collab.file, 'utf8');
+  await assert.rejects(collab.configure({ maxRounds: 0 }));
+  await assert.rejects(collab.configure({ participants: ['someone-else'] }), /Unsupported/);
+  assert.equal(await fs.readFile(collab.file, 'utf8'), beforeInvalid);
+  const next = await collab.start({ topic: 'Use the updated configuration.' });
+  assert.equal(next.config.deadlineMinutes, 45);
+  const history = JSON.parse(
+    await fs.readFile(path.join(collab.dir, 'history', `${previous.session.id}.json`), 'utf8'),
+  );
+  assert.deepEqual(history.messages, previous.session.messages);
+});
+
+test('independent proposals remain sealed until every peer submits; each peer gets one contribution per round', async (t) => {
   const { collab } = await fixture(t);
   await assert.rejects(collab.post('codex', message('evidence')), /independent proposal/);
-  const own = await collab.post('codex', message('proposal', { solution: 'max(start) < min(end)' }));
+  const own = await collab.post(
+    'codex',
+    message('proposal', { solution: 'max(start) < min(end)' }),
+  );
   const sealed = await collab.status('claude');
   assert.equal(sealed.session.phase, 'independent');
   assert.deepEqual(sealed.session.messages, []);
@@ -52,7 +92,7 @@ test('independent proposals remain sealed until every peer submits; each peer ge
   await assert.rejects(collab.post('claude', message('evidence')), /already contributed/);
 });
 
-test('agreement requires every participant to explicitly accept the same candidate', async t => {
+test('agreement requires every participant to explicitly accept the same candidate', async (t) => {
   const { collab } = await fixture(t, { participants: ['codex', 'claude', 'reviewer'] });
   const first = await collab.post('codex', message('proposal'));
   await collab.post('claude', message('proposal'));
@@ -66,25 +106,31 @@ test('agreement requires every participant to explicitly accept the same candida
   await assert.rejects(collab.post('codex', message('evidence')), /converged/);
 });
 
-test('different accepted candidates do not converge; a new proposal clears prior votes', async t => {
+test('different accepted candidates do not converge; a new proposal clears prior votes', async (t) => {
   const { collab } = await fixture(t);
   const [a, b] = await independent(collab);
   await collab.post('codex', message('accept', { candidate: a }));
   await collab.post('claude', message('accept', { candidate: b }));
   assert.equal((await collab.status()).session.status, 'active');
-  const replacement = await collab.post('codex', message('proposal', { summary: 'Revised candidate incorporates both boundary cases.' }));
+  const replacement = await collab.post(
+    'codex',
+    message('proposal', { summary: 'Revised candidate incorporates both boundary cases.' }),
+  );
   const s = (await collab.status()).session;
   assert.deepEqual(s.votes, {});
-  assert.equal(s.candidates.find(c => c.id === a).supersededBy, replacement.message.id);
+  assert.equal(s.candidates.find((c) => c.id === a).supersededBy, replacement.message.id);
   await assert.rejects(collab.post('claude', message('accept', { candidate: a })), /superseded/);
 });
 
-test('open challenges block acceptance and only their author can close them', async t => {
+test('open challenges block acceptance and only their author can close them', async (t) => {
   const { collab } = await fixture(t);
   const [candidate] = await independent(collab);
   const challenge = await collab.post('claude', message('challenge', { candidate }));
   await assert.rejects(collab.post('codex', message('accept', { candidate })), /open challenges/);
-  await assert.rejects(collab.post('codex', message('evidence', { resolves: [challenge.message.id] })), /original challenger/);
+  await assert.rejects(
+    collab.post('codex', message('evidence', { resolves: [challenge.message.id] })),
+    /original challenger/,
+  );
   await collab.post('codex', message('evidence', { repliesTo: challenge.message.id }));
   await collab.post('claude', message('accept', { candidate, resolves: [challenge.message.id] }));
   const final = await collab.post('codex', message('accept', { candidate }));
@@ -92,9 +138,15 @@ test('open challenges block acceptance and only their author can close them', as
   assert.ok((await collab.status()).session.challenges[0].resolvedBy);
 });
 
-test('required checks and current artifact hashes gate acceptance', async t => {
+test('required checks and current artifact hashes gate acceptance', async (t) => {
   const { root, collab } = await fixture(t, {
-    checks: { unit: [process.execPath, '-e', 'if(require("node:fs").readFileSync("answer.txt","utf8")!=="correct")process.exit(2)'] },
+    checks: {
+      unit: [
+        process.execPath,
+        '-e',
+        'if(require("node:fs").readFileSync("answer.txt","utf8")!=="correct")process.exit(2)',
+      ],
+    },
   });
   await fs.writeFile(path.join(root, 'answer.txt'), 'wrong');
   const [candidate] = await independent(collab, { files: ['answer.txt'] });
@@ -110,12 +162,17 @@ test('required checks and current artifact hashes gate acceptance', async t => {
   assert.equal((await collab.verify('claude', fresh, 'unit')).passed, true);
   await collab.post('codex', message('accept', { candidate: fresh }));
   await fs.writeFile(path.join(root, 'answer.txt'), 'changed after first acceptance');
-  await assert.rejects(collab.post('claude', message('accept', { candidate: fresh })), /files changed/);
+  await assert.rejects(
+    collab.post('claude', message('accept', { candidate: fresh })),
+    /files changed/,
+  );
 });
 
-test('checks that modify a proposed artifact cannot certify the stale candidate', async t => {
+test('checks that modify a proposed artifact cannot certify the stale candidate', async (t) => {
   const { root, collab } = await fixture(t, {
-    checks: { mutate: [process.execPath, '-e', 'require("node:fs").writeFileSync("answer.txt","modified")'] },
+    checks: {
+      mutate: [process.execPath, '-e', 'require("node:fs").writeFileSync("answer.txt","modified")'],
+    },
   });
   await fs.writeFile(path.join(root, 'answer.txt'), 'original');
   const [candidate] = await independent(collab, { files: ['answer.txt'] });
@@ -123,7 +180,7 @@ test('checks that modify a proposed artifact cannot certify the stale candidate'
   assert.deepEqual((await collab.status()).session.checks, []);
 });
 
-test('identical retries are idempotent, conflicting retries fail, and invalid input leaves state unchanged', async t => {
+test('identical retries are idempotent, conflicting retries fail, and invalid input leaves state unchanged', async (t) => {
   const { collab } = await fixture(t);
   const body = message('proposal');
   const original = await collab.post('codex', body);
@@ -131,30 +188,56 @@ test('identical retries are idempotent, conflicting retries fail, and invalid in
   const retry = await collab.post('codex', body);
   assert.equal(retry.duplicate, true);
   assert.deepEqual(retry.message, original.message);
-  await assert.rejects(collab.post('codex', { ...body, summary: 'Different answer' }), /different content/);
-  await assert.rejects(collab.post('claude', message('proposal', { evidence: [] })), /Provide evidence/);
+  await assert.rejects(
+    collab.post('codex', { ...body, summary: 'Different answer' }),
+    /different content/,
+  );
+  await assert.rejects(
+    collab.post('claude', message('proposal', { evidence: [] })),
+    /Provide evidence/,
+  );
   await assert.rejects(collab.post('unknown', message('proposal')), /Unknown participant/);
   await assert.rejects(collab.post('claude', { ...message('proposal'), unsupported: true }));
   assert.deepEqual(await collab.status(), before);
 });
 
-test('process locking preserves simultaneous proposals and rejects racing duplicate turns', async t => {
+test('process locking preserves simultaneous proposals and rejects racing duplicate turns', async (t) => {
   const { root, collab } = await fixture(t);
   const sessionId = (await collab.status('codex')).session.id;
-  const post = (agent, body) => execFileAsync(process.execPath, [cli, 'post', '--repo', root, '--agent', agent, '--session', sessionId, '--json', JSON.stringify(body)]);
+  const post = (agent, body) =>
+    execFileAsync(process.execPath, [
+      cli,
+      'post',
+      '--repo',
+      root,
+      '--agent',
+      agent,
+      '--session',
+      sessionId,
+      '--json',
+      JSON.stringify(body),
+    ]);
   await Promise.all([post('codex', message('proposal')), post('claude', message('proposal'))]);
   const first = await collab.status();
   assert.equal(first.session.messages.length, 2);
   assert.equal(first.session.round, 1);
-  const racing = await Promise.allSettled([post('codex', message('evidence')), post('codex', message('evidence'))]);
-  assert.equal(racing.filter(r => r.status === 'fulfilled').length, 1);
-  assert.equal(racing.filter(r => r.status === 'rejected').length, 1);
+  const racing = await Promise.allSettled([
+    post('codex', message('evidence')),
+    post('codex', message('evidence')),
+  ]);
+  assert.equal(racing.filter((r) => r.status === 'fulfilled').length, 1);
+  assert.equal(racing.filter((r) => r.status === 'rejected').length, 1);
   assert.equal((await collab.status()).session.messages.length, 3);
-  await assert.doesNotReject(fs.readFile(path.join(root, '.collab', 'state.json'), 'utf8').then(JSON.parse));
+  await assert.doesNotReject(
+    fs.readFile(path.join(root, '.collab', 'state.json'), 'utf8').then(JSON.parse),
+  );
 });
 
-test('message and discussion-round limits stop debate without inventing a winner', async t => {
-  for (const [config, reason] of [[{ maxMessages: 4 }, 'message_limit'], [{ maxRounds: 1 }, 'round_limit']]) {
+test('message and discussion-round limits stop debate without inventing a winner', async (t) => {
+  for (const [config, reason] of [
+    [{ maxMessages: 4 }, 'message_limit'],
+    [{ maxRounds: 1 }, 'round_limit'],
+  ]) {
     const { collab } = await fixture(t, config);
     await independent(collab);
     await collab.post('codex', message('evidence'));
@@ -167,7 +250,7 @@ test('message and discussion-round limits stop debate without inventing a winner
   }
 });
 
-test('deadline expiry persists even when the triggering write is rejected', async t => {
+test('deadline expiry persists even when the triggering write is rejected', async (t) => {
   const { root, collab } = await fixture(t);
   const file = path.join(root, '.collab', 'state.json');
   const state = JSON.parse(await fs.readFile(file, 'utf8'));
@@ -180,7 +263,7 @@ test('deadline expiry persists even when the triggering write is rejected', asyn
   assert.equal(persisted.revision, state.revision + 1);
 });
 
-test('claims reject overlap, traversal and escaping symlinks; release and expiry free paths', async t => {
+test('claims reject overlap, traversal and escaping symlinks; release and expiry free paths', async (t) => {
   const { root, collab } = await fixture(t);
   await collab.claim('codex', ['src']);
   await assert.rejects(collab.claim('claude', ['src/index.js']), /claimed by codex/);
@@ -200,7 +283,7 @@ test('claims reject overlap, traversal and escaping symlinks; release and expiry
   assert.equal((await collab.claim('codex', ['src'])).length, 1);
 });
 
-test('symlink aliases cannot bypass path claims or reserved metadata protection', async t => {
+test('symlink aliases cannot bypass path claims or reserved metadata protection', async (t) => {
   const { root, collab } = await fixture(t);
   await fs.mkdir(path.join(root, 'src'));
   await fs.writeFile(path.join(root, 'src', 'answer.js'), 'export default 42;');
@@ -219,7 +302,7 @@ test('symlink aliases cannot bypass path claims or reserved metadata protection'
   await assert.rejects(collab.claim('claude', ['self']), /metadata|repository root/);
 });
 
-test('equivalent file spellings produce one stable artifact snapshot', async t => {
+test('equivalent file spellings produce one stable artifact snapshot', async (t) => {
   const { root, collab } = await fixture(t);
   await fs.writeFile(path.join(root, 'answer.txt'), 'correct');
   const [candidate] = await independent(collab, { files: ['answer.txt', './answer.txt'] });
@@ -227,18 +310,24 @@ test('equivalent file spellings produce one stable artifact snapshot', async t =
   await assert.doesNotReject(collab.post('codex', message('accept', { candidate })));
 });
 
-test('semantic duplicates and repeated votes cannot prolong a discussion', async t => {
+test('semantic duplicates and repeated votes cannot prolong a discussion', async (t) => {
   const { collab } = await fixture(t);
   const [candidate] = await independent(collab);
   const evidence = message('evidence', { summary: 'Exhaustively checked endpoints from 0 to 5.' });
   await collab.post('claude', evidence);
   await collab.post('codex', message('accept', { candidate }));
-  await assert.rejects(collab.post('claude', { ...evidence, clientMessageId: 'another-message-id' }), /Repeated contribution/);
-  await assert.rejects(collab.post('codex', message('accept', { candidate, summary: 'Still agree' })), /already accepted/);
+  await assert.rejects(
+    collab.post('claude', { ...evidence, clientMessageId: 'another-message-id' }),
+    /Repeated contribution/,
+  );
+  await assert.rejects(
+    collab.post('codex', message('accept', { candidate, summary: 'Still agree' })),
+    /already accepted/,
+  );
   assert.equal((await collab.status()).session.messages.length, 4);
 });
 
-test('start, stop and restart archive prior sessions and preserve user context', async t => {
+test('start, stop and restart archive prior sessions and preserve user context', async (t) => {
   const { root, collab } = await fixture(t);
   const original = await collab.status();
   await assert.rejects(collab.init(), /Already initialized/);
@@ -247,26 +336,34 @@ test('start, stop and restart archive prior sessions and preserve user context',
   await writeInstructions(root, ['codex', 'claude']);
   await fs.writeFile(path.join(root, '.collab', 'CONTEXT.md'), 'User-owned context');
   await writeInstructions(root, ['codex', 'claude']);
-  assert.equal(await fs.readFile(path.join(root, '.collab', 'CONTEXT.md'), 'utf8'), 'User-owned context');
+  assert.equal(
+    await fs.readFile(path.join(root, '.collab', 'CONTEXT.md'), 'utf8'),
+    'User-owned context',
+  );
   await collab.stop('User paused this experiment');
   assert.deepEqual((await collab.status()).session.claims, []);
   const next = await collab.start({ topic: 'A new user-requested goal' });
   assert.notEqual(next.session.id, original.session.id);
-  const archived = JSON.parse(await fs.readFile(path.join(root, '.collab', 'history', `${original.session.id}.json`), 'utf8'));
+  const archived = JSON.parse(
+    await fs.readFile(path.join(root, '.collab', 'history', `${original.session.id}.json`), 'utf8'),
+  );
   assert.equal(archived.status, 'stopped');
   assert.equal(archived.stopReason, 'User paused this experiment');
   const codex = await launch(root, 'codex', { print: true });
   const claude = await launch(root, 'claude', { print: true });
   assert.equal(codex.cwd, root);
-  assert.ok(codex.args.some(arg => arg.includes('mcp_servers.model_collab')));
+  assert.ok(codex.args.some((arg) => arg.includes('mcp_servers.model_collab')));
   assert.ok(claude.args.includes('--mcp-config'));
 });
 
-test('wait observes peer revisions and terminal status; a blocker stops both peers', async t => {
+test('wait observes peer revisions and terminal status; a blocker stops both peers', async (t) => {
   const { collab } = await fixture(t);
   const before = await collab.status('claude');
   const waiting = collab.wait('claude', before.revision, 2000);
-  await collab.post('codex', message('blocked', { summary: 'Required source is unavailable', evidence: [] }));
+  await collab.post(
+    'codex',
+    message('blocked', { summary: 'Required source is unavailable', evidence: [] }),
+  );
   const result = await waiting;
   assert.equal(result.session.status, 'blocked');
   assert.equal(result.session.nextAction, 'stop');
@@ -274,8 +371,10 @@ test('wait observes peer revisions and terminal status; a blocker stops both pee
   await assert.rejects(collab.wait('claude', -2, 1), /revision/);
 });
 
-test('verification cannot certify a text-only proposal or run an inherited check name', async t => {
-  const { collab } = await fixture(t, { checks: { unit: [process.execPath, '-e', 'process.exit(0)'] } });
+test('verification cannot certify a text-only proposal or run an inherited check name', async (t) => {
+  const { collab } = await fixture(t, {
+    checks: { unit: [process.execPath, '-e', 'process.exit(0)'] },
+  });
   const id = (await collab.post('codex', message('proposal'))).message.id;
   await assert.rejects(collab.verify('codex', id, 'unit'), /file-backed proposal/);
   await assert.rejects(collab.verify('codex', id, 'constructor'), /Unknown check/);

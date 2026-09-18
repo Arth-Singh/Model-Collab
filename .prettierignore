@@ -1,4 +1,4 @@
 node_modules/
 .collab/
 *.tgz
-.DS_Store
+package-lock.json

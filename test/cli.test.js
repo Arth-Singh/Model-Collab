@@ -10,44 +10,55 @@ import { runCommand } from '../src/process.js';
 
 const cli = fileURLToPath(new URL('../bin/model-collab.js', import.meta.url));
 const message = (kind = 'proposal', extra = {}) => ({
-  clientMessageId: randomUUID(), contextVersion: 0, kind,
-  summary: 'Review the current goal.', evidence: ['Checked the current goal and candidate.'], ...extra,
+  clientMessageId: randomUUID(),
+  contextVersion: 0,
+  kind,
+  summary: 'Review the current goal.',
+  evidence: ['Checked the current goal and candidate.'],
+  ...extra,
 });
 
-test('CLI evaluation planning and insufficient budgets never invoke providers or write artifacts', async t => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'model-collab-plan-'));
+test('project setup and controls provide readable output while preserving JSON automation', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'model-collab-onboarding-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
-  const marker = path.join(root, 'provider-called');
-  const script = `#!${process.execPath}\nrequire('node:fs').writeFileSync(${JSON.stringify(marker)}, 'called'); process.exit(1);\n`;
-  for (const name of ['codex', 'claude']) await fs.writeFile(path.join(root, name), script, { mode: 0o700 });
-  const invoke = args => runCommand([process.execPath, cli, 'eval', '--suite', 'rl', '--tasks', 'rl-gae-boundaries', '--output', path.join(root, 'results'), ...args], { cwd: root, env: { ...process.env, PATH: root } });
-  const planned = await invoke(['--max-calls', '16', '--plan']);
-  assert.equal(planned.code, 0, planned.stderr);
-  const manifest = JSON.parse(planned.stdout);
-  assert.equal(manifest.config.plannedCalls, 16);
-  assert.equal(manifest.config.effort, 'xhigh');
-  assert.deepEqual(manifest.config.modes, ['solo-codex', 'solo-claude', 'independent-pair', 'collaboration']);
-  const rejected = await invoke(['--max-calls', '15']);
-  assert.notEqual(rejected.code, 0);
-  assert.match(rejected.stderr, /cover all 16 planned calls/);
-  assert.deepEqual((await fs.readdir(root)).sort(), ['claude', 'codex']);
-});
-
-test('CLI evaluation saves readable results and an unpublished draft using only fixture providers', async t => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'model-collab-report-'));
-  t.after(() => fs.rm(root, { recursive: true, force: true }));
-  const response = JSON.stringify({ solution: 'function solve() { return null; }', summary: 'Intentionally incorrect fixture output.' });
-  await fs.writeFile(path.join(root, 'codex'), `#!${process.execPath}\nconst fs = require('node:fs');\nfs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message') + 1], ${JSON.stringify(response)});\nconsole.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:10,output_tokens:10,cached_input_tokens:0}}));\n`, { mode: 0o700 });
-  const result = await runCommand([process.execPath, cli, 'eval', '--suite', 'rl', '--tasks', 'rl-gae-boundaries', '--modes', 'solo-codex', '--calls', '2', '--max-calls', '2', '--output', path.join(root, 'results')], { cwd: root, env: { ...process.env, PATH: root } });
-  assert.equal(result.code, 0, result.stderr);
-  const output = JSON.parse(result.stdout);
-  const report = JSON.parse(await fs.readFile(output.artifactPath, 'utf8'));
-  assert.equal(report.counters.attempted, 2);
-  assert.equal(report.counters.launched, 2);
-  assert.equal(report.results[0].outcome, 'incorrect');
-  assert.equal(report.results[0].executionStatus, 'complete');
-  assert.match(await fs.readFile(output.reportPath, 'utf8'), /solo-codex/);
-  assert.match(await fs.readFile(output.draftPath, 'utf8'), /DRAFT — not posted/);
+  const run = async (...args) => {
+    const result = await runCommand([process.execPath, cli, ...args, '--repo', root], {
+      cwd: root,
+    });
+    assert.equal(result.code, 0, result.stderr);
+    return result.stdout;
+  };
+  await fs.writeFile(path.join(root, 'AGENTS.md'), 'Existing project rules.\n');
+  assert.match(await run('init', '--preset', 'research'), /Research brief: .collab\/RESEARCH.md/);
+  assert.equal(
+    await fs.readFile(path.join(root, 'AGENTS.md'), 'utf8'),
+    'Existing project rules.\n',
+  );
+  const changed = JSON.parse(
+    await run('configure', '--minutes', '45', '--max-rounds', '6', '--json'),
+  );
+  assert.equal(changed.deadlineMinutes, 45);
+  assert.equal(changed.maxRounds, 6);
+  assert.match(await run('start', 'Inspect the project.'), /Goal: Inspect the project/);
+  const denied = await runCommand([
+    process.execPath,
+    cli,
+    'configure',
+    '--minutes',
+    '30',
+    '--repo',
+    root,
+  ]);
+  assert.notEqual(denied.code, 0);
+  assert.match(denied.stderr, /Stop the current/);
+  assert.match(await run('status', '--human'), /Status: active/);
+  assert.equal(JSON.parse(await run('status')).session.status, 'active');
+  assert.match(await run('pause'), /Collaboration paused/);
+  const note = JSON.parse(await run('note', 'Keep the public API.', '--json'));
+  assert.equal(note.session.contextVersion, 1);
+  assert.match(await run('resume'), /Collaboration resumed/);
+  assert.match(await run('stop'), /Collaboration stopped/);
+  assert.equal(JSON.parse(await run('configure', '--preset', 'coding', '--json')).preset, 'coding');
 });
 
 async function fixture(t) {
@@ -56,14 +67,26 @@ async function fixture(t) {
   const collab = new Collaboration(root);
   await collab.init();
   const state = await collab.start({ topic: 'Goal A' });
-  const post = (body, sessionId = state.session.id) => runCommand([
-    process.execPath, cli, 'post', '--repo', root, '--agent', 'codex',
-    ...(sessionId === null ? [] : ['--session', sessionId]), '--json', '-',
-  ], { cwd: root, input: JSON.stringify(body) });
+  const post = (body, sessionId = state.session.id) =>
+    runCommand(
+      [
+        process.execPath,
+        cli,
+        'post',
+        '--repo',
+        root,
+        '--agent',
+        'codex',
+        ...(sessionId === null ? [] : ['--session', sessionId]),
+        '--json',
+        '-',
+      ],
+      { cwd: root, input: JSON.stringify(body) },
+    );
   return { collab, sessionId: state.session.id, post };
 }
 
-test('CLI post requires a nonempty, valid observed session ID without mutating state', async t => {
+test('CLI post requires a nonempty, valid observed session ID without mutating state', async (t) => {
   const { collab, post } = await fixture(t);
   const before = await fs.readFile(collab.file, 'utf8');
   for (const sessionId of [null, '', 'not-a-session-id']) {
@@ -74,7 +97,7 @@ test('CLI post requires a nonempty, valid observed session ID without mutating s
   }
 });
 
-test('CLI posts with the observed session remain retry-safe', async t => {
+test('CLI posts with the observed session remain retry-safe', async (t) => {
   const { collab, post } = await fixture(t);
   const body = message();
   const first = await post(body);
@@ -92,7 +115,7 @@ test('CLI posts with the observed session remain retry-safe', async t => {
   assert.equal(await fs.readFile(collab.file, 'utf8'), before);
 });
 
-test('CLI rejects a stale proposal when the replacement goal has the same context version', async t => {
+test('CLI rejects a stale proposal when the replacement goal has the same context version', async (t) => {
   const { collab, sessionId, post } = await fixture(t);
   const stale = message();
   await collab.stop('Replace the goal.');
@@ -108,7 +131,7 @@ test('CLI rejects a stale proposal when the replacement goal has the same contex
   assert.equal(accepted.code, 0, accepted.stderr);
 });
 
-test('CLI rejects a stale acceptance despite reused candidate IDs and allows a current vote', async t => {
+test('CLI rejects a stale acceptance despite reused candidate IDs and allows a current vote', async (t) => {
   const { collab, post } = await fixture(t);
   const old = await collab.post('codex', message());
   await collab.post('claude', message());
