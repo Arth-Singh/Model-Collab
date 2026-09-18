@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 2,
+  "createdAt": "2026-09-18T19:53:09.712Z",
+  "config": {
+    "suite": "rl",
+    "taskIds": [
+      "rl-gae-boundaries"
+    ],
+    "modes": [
+      "solo-codex",
+      "solo-claude",
+      "independent-pair",
+      "collaboration"
+    ],
+    "callBudget": 4,
+    "timeoutMs": 90000,
+    "trials": 1,
+    "models": {
+      "codex": "gpt-6-astra",
+      "claude": "claude-fable-5-1[1m]"
+    },
+    "effort": "xhigh",
+    "maxTotalCalls": 16,
+    "plannedCalls": 16,
+    "globalTimeoutMs": 1200000,
+    "deadlineMs": 1789762810000,
+    "bootstrapSamples": 2000,
+    "bootstrapSeed": 20260919,
+    "stopAfterInitialInfrastructureFailures": 2,
+    "providerKind": "local-cli",
+    "prices": null
+  },
+  "tasks": [
+    {
+      "id": "rl-gae-boundaries",
+      "title": "GAE across termination, truncation, and rollout boundaries",
+      "suite": "rl",
+      "specification": "Implement synchronous function solve(data) returning {advantages, returns}.\ndata has equal-length arrays rewards, values, nextValues, terminated, truncated and scalars gamma, lambda in [0,1]. Length is 0..300. Numerical inputs are finite. nextValues[t] is the value of the actual next/final observation for transition t, NOT the reset observation. Adjacent transitions after a termination or truncation may belong to a new episode.\nUse delta[t] = rewards[t] + gamma*(1-terminated[t])*nextValues[t] - values[t]. GAE sums discounted future deltas with multiplier gamma*lambda while staying in the SAME episode. Both termination and truncation stop propagation to the next transition. Only termination suppresses bootstrap in the current delta. If both flags are true, termination wins. At the end of the available rollout, the future GAE tail is zero but nextValues still provides the final bootstrap. returns[t] = advantages[t]+values[t]. Do not normalize advantages. Empty arrays produce empty arrays.",
+      "sources": [
+        "https://arxiv.org/html/1506.02438v6",
+        "https://gymnasium.farama.org/tutorials/gymnasium_basics/handling_time_limits/"
+      ],
+      "specificationHash": "573c39b868ee0d8c72803e9625b413d7a1965bcdb58fa6c3956512daf71c33e6"
+    }
+  ],
+  "schedule": [
+    {
+      "taskId": "rl-gae-boundaries",
+      "mode": "solo-codex",
+      "trial": 0,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-gae-boundaries",
+      "mode": "solo-claude",
+      "trial": 0,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-gae-boundaries",
+      "mode": "independent-pair",
+      "trial": 0,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-gae-boundaries",
+      "mode": "collaboration",
+      "trial": 0,
+      "finalProvider": "claude"
+    }
+  ],
+  "sourceHashes": {
+    "src/eval.js": "07dc8de8235a1450aec3cc041d48f7a8532239af3bc9a5cdf998a87a7f9cafc0",
+    "src/providers.js": "1529d122c7a15b3f22ce4b2984537d720c8db1a1012b3c96e04290d85fc538da",
+    "eval/reporting.js": "8a2e49a5dcfd7136c860d1e9de4f8520b13edf49ad64ac8f4a78e63b2eb80c72",
+    "eval/private-tests.js": "795d442d423d4068fe2dba7a4a463e868ed37653128fd134ba270d95b6c1cff0",
+    "eval/private-rl-tests.js": "a2a39d13969a1baf463f9f3d8bd27d6464328b778407df4026df42226d62e2ee",
+    "eval/grade-worker.js": "09f100307e657c473d40f72f9562afba4208ec94cbf7a6d8425b1236511d18d9"
+  },
+  "promptHash": "a3097db56630a41652a4e0316668034bace3aa5b6d83c6b4874194356eac7070",
+  "grading": {
+    "perCaseTimeoutMs": 150,
+    "processTimeoutMs": 10000,
+    "floatTolerance": "1e-8 * (1 + abs(expected)) for RL tasks",
+    "selection": "Precommitted rotating final provider, last valid candidate; no test-based selection"
+  },
+  "analysisPlan": {
+    "primaryContrast": "collaboration versus independent-pair",
+    "primaryEndpoint": "Task-macro whole-task accuracy among jointly complete, graded task/trial pairs",
+    "secondaryEndpoint": "Operational output success on all planned runs, including failures",
+    "uncertainty": "Percentile bootstrap of distinct tasks after averaging paired trial differences within task; no test-case pseudoreplication",
+    "missingness": "Incomplete pairs excluded from algorithm contrast and counted separately; operational failures retained"
+  },
+  "configHash": "be0d1d40316961798c3598b1cafc348c169a6e3870e4ae7249d5a35b0a83653d",
+  "manifestHash": "a5f90113f1d4ea96afc3ad22441520fa9c30936622d367bd95810006c4305884"
+}

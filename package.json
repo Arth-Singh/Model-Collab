@@ -1,0 +1,14 @@
+{
+  "name": "@arth-singh/model-collab",
+  "version": "0.1.0",
+  "description": "Bounded, evidence-led peer collaboration for Codex and Claude Code",
+  "type": "module",
+  "bin": { "model-collab": "bin/model-collab.js" },
+  "exports": { ".": "./src/core.js" },
+  "files": ["bin", "src", "prompts", "schemas", "eval", "examples", "docs", "README.md", "LICENSE"],
+  "scripts": { "test": "node --test", "check": "node --check bin/model-collab.js && node --check src/core.js && node --check src/server.js", "eval": "node bin/model-collab.js eval" },
+  "engines": { "node": ">=22.12" },
+  "repository": { "type": "git", "url": "git+https://github.com/Arth-Singh/Model-Collab.git" },
+  "license": "MIT",
+  "dependencies": { "@modelcontextprotocol/sdk": "^1.30.0", "commander": "^15.0.0", "proper-lockfile": "^4.1.2", "zod": "^4.6.5" }
+}

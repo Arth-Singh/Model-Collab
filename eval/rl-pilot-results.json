@@ -1,0 +1,459 @@
+{
+  "schemaVersion": 1,
+  "runId": "ebdff8c5-cd6c-4365-ac04-5e6e07f77f54",
+  "startedAt": "2026-09-18T19:53:09.713Z",
+  "completedAt": "2026-09-18T19:57:54.673Z",
+  "status": "complete",
+  "wallMs": 284960,
+  "manifestHash": "a5f90113f1d4ea96afc3ad22441520fa9c30936622d367bd95810006c4305884",
+  "configHash": "be0d1d40316961798c3598b1cafc348c169a6e3870e4ae7249d5a35b0a83653d",
+  "manifestFile": "rl-pilot-manifest.json",
+  "sourceHashesVerified": true,
+  "requested": {
+    "models": {
+      "codex": "gpt-6-astra",
+      "claude": "claude-fable-5-1[1m]"
+    },
+    "effort": "xhigh"
+  },
+  "observedModelIds": {
+    "codex": [],
+    "claude": [
+      "claude-fable-5-1"
+    ]
+  },
+  "observedEffort": null,
+  "config": {
+    "suite": "rl",
+    "taskIds": [
+      "rl-gae-boundaries"
+    ],
+    "modes": [
+      "solo-codex",
+      "solo-claude",
+      "independent-pair",
+      "collaboration"
+    ],
+    "callBudget": 4,
+    "timeoutMs": 90000,
+    "trials": 1,
+    "models": {
+      "codex": "gpt-6-astra",
+      "claude": "claude-fable-5-1[1m]"
+    },
+    "effort": "xhigh",
+    "maxTotalCalls": 16,
+    "plannedCalls": 16,
+    "globalTimeoutMs": 1200000,
+    "deadlineMs": 1789762810000,
+    "bootstrapSamples": 2000,
+    "bootstrapSeed": 20260919,
+    "stopAfterInitialInfrastructureFailures": 2,
+    "providerKind": "local-cli",
+    "prices": null
+  },
+  "counters": {
+    "scheduled": 16,
+    "attempted": 16,
+    "launched": 16,
+    "launchUnknown": 0,
+    "skipped": 0
+  },
+  "summary": [
+    {
+      "mode": "solo-codex",
+      "runs": 1,
+      "validRuns": 1,
+      "incompleteRuns": 0,
+      "correct": 1,
+      "incorrect": 0,
+      "accuracy": 1,
+      "accuracyDefinition": "Mean of per-task accuracy among complete, graded runs; excludes incomplete runs",
+      "operationalSuccessRate": 1,
+      "wallMs": 92906,
+      "modelCalls": 4,
+      "attemptedCalls": 4,
+      "launchedCalls": 4,
+      "launchUnknownCalls": 0,
+      "skippedCalls": 0,
+      "failedCalls": 0,
+      "callFailureRate": 0,
+      "timingInvalidRuns": 0,
+      "usage": {
+        "input": 45836,
+        "output": 2463,
+        "cachedInput": 0,
+        "cacheCreation": 0,
+        "total": 48299
+      },
+      "usageCoverage": {
+        "knownCalls": 4,
+        "attemptedCalls": 4,
+        "knownUsageTotals": {
+          "input": 45836,
+          "output": 2463,
+          "cachedInput": 0,
+          "cacheCreation": 0,
+          "total": 48299
+        },
+        "total": {
+          "input": 45836,
+          "output": 2463,
+          "cachedInput": 0,
+          "cacheCreation": 0,
+          "total": 48299
+        }
+      }
+    },
+    {
+      "mode": "solo-claude",
+      "runs": 1,
+      "validRuns": 1,
+      "incompleteRuns": 0,
+      "correct": 1,
+      "incorrect": 0,
+      "accuracy": 1,
+      "accuracyDefinition": "Mean of per-task accuracy among complete, graded runs; excludes incomplete runs",
+      "operationalSuccessRate": 1,
+      "wallMs": 88487,
+      "modelCalls": 4,
+      "attemptedCalls": 4,
+      "launchedCalls": 4,
+      "launchUnknownCalls": 0,
+      "skippedCalls": 0,
+      "failedCalls": 0,
+      "callFailureRate": 0,
+      "timingInvalidRuns": 0,
+      "usage": {
+        "input": 22251,
+        "output": 7727,
+        "cachedInput": 11322,
+        "cacheCreation": 10921,
+        "total": 29978
+      },
+      "usageCoverage": {
+        "knownCalls": 4,
+        "attemptedCalls": 4,
+        "knownUsageTotals": {
+          "input": 22251,
+          "output": 7727,
+          "cachedInput": 11322,
+          "cacheCreation": 10921,
+          "total": 29978
+        },
+        "total": {
+          "input": 22251,
+          "output": 7727,
+          "cachedInput": 11322,
+          "cacheCreation": 10921,
+          "total": 29978
+        }
+      }
+    },
+    {
+      "mode": "independent-pair",
+      "runs": 1,
+      "validRuns": 1,
+      "incompleteRuns": 0,
+      "correct": 1,
+      "incorrect": 0,
+      "accuracy": 1,
+      "accuracyDefinition": "Mean of per-task accuracy among complete, graded runs; excludes incomplete runs",
+      "operationalSuccessRate": 1,
+      "wallMs": 54113,
+      "modelCalls": 4,
+      "attemptedCalls": 4,
+      "launchedCalls": 4,
+      "launchUnknownCalls": 0,
+      "skippedCalls": 0,
+      "failedCalls": 0,
+      "callFailureRate": 0,
+      "timingInvalidRuns": 0,
+      "usage": {
+        "input": 33312,
+        "output": 5116,
+        "cachedInput": 7548,
+        "cacheCreation": 2988,
+        "total": 38428
+      },
+      "usageCoverage": {
+        "knownCalls": 4,
+        "attemptedCalls": 4,
+        "knownUsageTotals": {
+          "input": 33312,
+          "output": 5116,
+          "cachedInput": 7548,
+          "cacheCreation": 2988,
+          "total": 38428
+        },
+        "total": {
+          "input": 33312,
+          "output": 5116,
+          "cachedInput": 7548,
+          "cacheCreation": 2988,
+          "total": 38428
+        }
+      }
+    },
+    {
+      "mode": "collaboration",
+      "runs": 1,
+      "validRuns": 1,
+      "incompleteRuns": 0,
+      "correct": 1,
+      "incorrect": 0,
+      "accuracy": 1,
+      "accuracyDefinition": "Mean of per-task accuracy among complete, graded runs; excludes incomplete runs",
+      "operationalSuccessRate": 1,
+      "wallMs": 49347,
+      "modelCalls": 4,
+      "attemptedCalls": 4,
+      "launchedCalls": 4,
+      "launchUnknownCalls": 0,
+      "skippedCalls": 0,
+      "failedCalls": 0,
+      "callFailureRate": 0,
+      "timingInvalidRuns": 0,
+      "usage": {
+        "input": 34455,
+        "output": 3878,
+        "cachedInput": 7548,
+        "cacheCreation": 3533,
+        "total": 38333
+      },
+      "usageCoverage": {
+        "knownCalls": 4,
+        "attemptedCalls": 4,
+        "knownUsageTotals": {
+          "input": 34455,
+          "output": 3878,
+          "cachedInput": 7548,
+          "cacheCreation": 3533,
+          "total": 38333
+        },
+        "total": {
+          "input": 34455,
+          "output": 3878,
+          "cachedInput": 7548,
+          "cacheCreation": 3533,
+          "total": 38333
+        }
+      }
+    }
+  ],
+  "pairedComparisons": [
+    {
+      "treatment": "collaboration",
+      "baseline": "solo-codex",
+      "plannedPairs": 1,
+      "completePairs": 1,
+      "excludedIncompletePairs": 0,
+      "algorithmAccuracyDifference": {
+        "mean": 0,
+        "interval95": null,
+        "distinctTasks": 1,
+        "samples": 0,
+        "seed": 20260919,
+        "unit": "distinct_task",
+        "limitation": "At least two distinct tasks are needed; one task cannot support across-task uncertainty."
+      },
+      "operationalSuccessDifference": 0,
+      "perTaskDifferences": [
+        {
+          "taskId": "rl-gae-boundaries",
+          "difference": 0,
+          "completeTrials": 1
+        }
+      ],
+      "caveat": "Complete-pair analysis can be selection-biased when failures differ. Operational success includes failures and is not pure algorithm quality. Test cases are never treated as independent research samples."
+    },
+    {
+      "treatment": "collaboration",
+      "baseline": "solo-claude",
+      "plannedPairs": 1,
+      "completePairs": 1,
+      "excludedIncompletePairs": 0,
+      "algorithmAccuracyDifference": {
+        "mean": 0,
+        "interval95": null,
+        "distinctTasks": 1,
+        "samples": 0,
+        "seed": 20260919,
+        "unit": "distinct_task",
+        "limitation": "At least two distinct tasks are needed; one task cannot support across-task uncertainty."
+      },
+      "operationalSuccessDifference": 0,
+      "perTaskDifferences": [
+        {
+          "taskId": "rl-gae-boundaries",
+          "difference": 0,
+          "completeTrials": 1
+        }
+      ],
+      "caveat": "Complete-pair analysis can be selection-biased when failures differ. Operational success includes failures and is not pure algorithm quality. Test cases are never treated as independent research samples."
+    },
+    {
+      "treatment": "collaboration",
+      "baseline": "independent-pair",
+      "plannedPairs": 1,
+      "completePairs": 1,
+      "excludedIncompletePairs": 0,
+      "algorithmAccuracyDifference": {
+        "mean": 0,
+        "interval95": null,
+        "distinctTasks": 1,
+        "samples": 0,
+        "seed": 20260919,
+        "unit": "distinct_task",
+        "limitation": "At least two distinct tasks are needed; one task cannot support across-task uncertainty."
+      },
+      "operationalSuccessDifference": 0,
+      "perTaskDifferences": [
+        {
+          "taskId": "rl-gae-boundaries",
+          "difference": 0,
+          "completeTrials": 1
+        }
+      ],
+      "caveat": "Complete-pair analysis can be selection-biased when failures differ. Operational success includes failures and is not pure algorithm quality. Test cases are never treated as independent research samples."
+    }
+  ],
+  "results": [
+    {
+      "taskId": "rl-gae-boundaries",
+      "trial": 0,
+      "mode": "solo-codex",
+      "executionStatus": "complete",
+      "outcome": "correct",
+      "finalProvider": "codex",
+      "grade": {
+        "passed": 27,
+        "total": 27,
+        "correct": true,
+        "failures": []
+      },
+      "counters": {
+        "scheduled": 4,
+        "attempted": 4,
+        "launched": 4,
+        "launchUnknown": 0,
+        "skipped": 0
+      },
+      "wallMs": 92906,
+      "usage": {
+        "input": 45836,
+        "output": 2463,
+        "cachedInput": 0,
+        "cacheCreation": 0,
+        "total": 48299
+      },
+      "finalSolution": "function solve(data) {\n  const { rewards, values, nextValues, terminated, truncated, gamma, lambda } = data;\n  const n = rewards.length;\n  const advantages = new Array(n);\n  const returns = new Array(n);\n  const discount = gamma * lambda;\n  let tail = 0;\n  for (let t = n - 1; t >= 0; t--) {\n    const delta = rewards[t] + (terminated[t] ? 0 : gamma * nextValues[t]) - values[t];\n    tail = delta + (terminated[t] || truncated[t] ? 0 : discount * tail);\n    advantages[t] = tail;\n    returns[t] = tail + values[t];\n  }\n  return { advantages, returns };\n}",
+      "finalSummary": "Unchanged after review. Reverse recurrence stops at either boundary; only termination suppresses bootstrap. Hand-check: gamma=lambda=1, rewards=[1,100], values=[0,0], nextValues=[5,0]: truncation at 0 yields advantages=[6,100]; termination yields [1,100]. Handles simultaneous flags, final bootstrap, zero discounts, and empty arrays. O(n) time and output space."
+    },
+    {
+      "taskId": "rl-gae-boundaries",
+      "trial": 0,
+      "mode": "solo-claude",
+      "executionStatus": "complete",
+      "outcome": "correct",
+      "finalProvider": "claude",
+      "grade": {
+        "passed": 27,
+        "total": 27,
+        "correct": true,
+        "failures": []
+      },
+      "counters": {
+        "scheduled": 4,
+        "attempted": 4,
+        "launched": 4,
+        "launchUnknown": 0,
+        "skipped": 0
+      },
+      "wallMs": 88487,
+      "usage": {
+        "input": 22251,
+        "output": 7727,
+        "cachedInput": 11322,
+        "cacheCreation": 10921,
+        "total": 29978
+      },
+      "finalSolution": "function solve(data) {\n  var rewards = (data && data.rewards) || [];\n  var values = (data && data.values) || [];\n  var nextValues = (data && data.nextValues) || [];\n  var terminated = (data && data.terminated) || [];\n  var truncated = (data && data.truncated) || [];\n  var gamma = Number(data && data.gamma);\n  var lambda = Number(data && data.lambda);\n  if (!isFinite(gamma)) gamma = 0;\n  if (!isFinite(lambda)) lambda = 0;\n  var n = rewards.length;\n  var advantages = new Array(n);\n  var returns = new Array(n);\n  var gae = 0;\n  for (var t = n - 1; t >= 0; t--) {\n    var term = terminated[t] ? 1 : 0;\n    var trunc = truncated[t] ? 1 : 0;\n    var r = Number(rewards[t]);\n    var v = Number(values[t]);\n    var nv = Number(nextValues[t]);\n    var delta = r + gamma * (1 - term) * nv - v;\n    var stop = (term || trunc) ? 1 : 0;\n    gae = delta + gamma * lambda * (1 - stop) * gae;\n    advantages[t] = gae;\n    returns[t] = gae + v;\n  }\n  return { advantages: advantages, returns: returns };\n}",
+      "finalSummary": "No changes from the previous round; a fresh review against the spec found no counterexample. Backward pass computes delta[t] = r + gamma*(1-terminated)*nextValues - values, so only termination suppresses the bootstrap while truncation and the rollout end still bootstrap from nextValues. Accumulator is gae = delta + gamma*lambda*(1-stop)*gae_next with stop = terminated OR truncated, so either flag blocks the future tail at an episode boundary; both flags true behaves exactly as termination. Accumulator starts at 0 so the final index has a zero tail. returns = advantages + values, unnormalized; empty input yields empty arrays; flags accepted as booleans or 0/1. Verified with gamma=lambda=1, rewards=[1,1], values=[0,0], nextValues=[5,5]: no flags gives adv=[12,6]; terminated=[0,1] gives [7,1]; truncated=[1,0] gives [6,6]; both flags at t=0 gives [1,6]. gamma=0 reduces to r-v and lambda=0 reduces to one-step TD errors."
+    },
+    {
+      "taskId": "rl-gae-boundaries",
+      "trial": 0,
+      "mode": "independent-pair",
+      "executionStatus": "complete",
+      "outcome": "correct",
+      "finalProvider": "claude",
+      "grade": {
+        "passed": 27,
+        "total": 27,
+        "correct": true,
+        "failures": []
+      },
+      "counters": {
+        "scheduled": 4,
+        "attempted": 4,
+        "launched": 4,
+        "launchUnknown": 0,
+        "skipped": 0
+      },
+      "wallMs": 54113,
+      "usage": {
+        "input": 33312,
+        "output": 5116,
+        "cachedInput": 7548,
+        "cacheCreation": 2988,
+        "total": 38428
+      },
+      "finalSolution": "function solve(data) {\n  var rewards = (data && data.rewards) || [];\n  var values = (data && data.values) || [];\n  var nextValues = (data && data.nextValues) || [];\n  var terminated = (data && data.terminated) || [];\n  var truncated = (data && data.truncated) || [];\n  var gamma = Number(data && data.gamma);\n  var lambda = Number(data && data.lambda);\n  if (!isFinite(gamma)) gamma = 0;\n  if (!isFinite(lambda)) lambda = 0;\n  function flag(x) {\n    if (typeof x === 'string') {\n      var s = x.trim().toLowerCase();\n      return (s === 'true' || s === '1' || s === 'yes') ? 1 : 0;\n    }\n    return x ? 1 : 0;\n  }\n  var n = rewards.length;\n  var advantages = new Array(n);\n  var returns = new Array(n);\n  var lastGae = 0;\n  for (var t = n - 1; t >= 0; t--) {\n    var term = flag(terminated[t]);\n    var trunc = flag(truncated[t]);\n    var r = Number(rewards[t]) || 0;\n    var v = Number(values[t]) || 0;\n    var nv = Number(nextValues[t]) || 0;\n    var delta = r + gamma * (1 - term) * nv - v;\n    var cont = (term || trunc) ? 0 : 1;\n    var adv = delta + gamma * lambda * cont * lastGae;\n    advantages[t] = adv;\n    returns[t] = adv + v;\n    lastGae = adv;\n  }\n  return { advantages: advantages, returns: returns };\n}",
+      "finalSummary": "Backward GAE pass. delta[t] = r + gamma*(1-terminated)*nextValue - value, so only termination removes the bootstrap. advantage[t] = delta[t] + gamma*lambda*(1-done)*advantage[t+1] with done = terminated OR truncated, so either flag stops propagation across the episode boundary; when both are set termination wins because the bootstrap mask uses terminated alone. The pass starts with a zero tail, so the last index has no future GAE but still bootstraps from nextValues unless terminated. returns = advantage + value, no normalization; empty input yields empty arrays. Reviewed the prior candidate against every rule and hand-checked single-step, truncation, termination, and mid-rollout episode boundary cases; found no logic errors. Only change: flag coercion now handles string flags (\"false\" no longer counts as true) while booleans and 0/1 behave as before."
+    },
+    {
+      "taskId": "rl-gae-boundaries",
+      "trial": 0,
+      "mode": "collaboration",
+      "executionStatus": "complete",
+      "outcome": "correct",
+      "finalProvider": "claude",
+      "grade": {
+        "passed": 27,
+        "total": 27,
+        "correct": true,
+        "failures": []
+      },
+      "counters": {
+        "scheduled": 4,
+        "attempted": 4,
+        "launched": 4,
+        "launchUnknown": 0,
+        "skipped": 0
+      },
+      "wallMs": 49347,
+      "usage": {
+        "input": 34455,
+        "output": 3878,
+        "cachedInput": 7548,
+        "cacheCreation": 3533,
+        "total": 38333
+      },
+      "finalSolution": "function solve(data) {\n  var d = data || {};\n  var rewards = Array.isArray(d.rewards) ? d.rewards : [];\n  var values = Array.isArray(d.values) ? d.values : [];\n  var nextValues = Array.isArray(d.nextValues) ? d.nextValues : [];\n  var terminated = Array.isArray(d.terminated) ? d.terminated : [];\n  var truncated = Array.isArray(d.truncated) ? d.truncated : [];\n  var gamma = Number(d.gamma);\n  var lambda = Number(d.lambda);\n  if (!isFinite(gamma)) gamma = 0;\n  if (!isFinite(lambda)) lambda = 0;\n  var n = rewards.length;\n  var advantages = new Array(n);\n  var returns = new Array(n);\n  var discount = gamma * lambda;\n  var nextAdv = 0;\n  for (var t = n - 1; t >= 0; t--) {\n    var r = Number(rewards[t]) || 0;\n    var v = Number(values[t]) || 0;\n    var nv = Number(nextValues[t]) || 0;\n    var term = terminated[t] ? 1 : 0;\n    var trunc = truncated[t] ? 1 : 0;\n    var done = (term || trunc) ? 1 : 0;\n    var delta = r + gamma * (1 - term) * nv - v;\n    var adv = delta + (done ? 0 : discount * nextAdv);\n    advantages[t] = adv;\n    returns[t] = adv + v;\n    nextAdv = adv;\n  }\n  return { advantages: advantages, returns: returns };\n}",
+      "finalSummary": "Reviewed both candidates. They are semantically identical: delta[t] = r[t] + gamma*(1-terminated[t])*nextValues[t] - values[t]; adv[t] = delta[t] + gamma*lambda*adv[t+1] unless terminated[t] or truncated[t], in which case the tail is cut. Only termination zeroes the bootstrap (truncation still uses nextValues, which is the true final obs). When both flags are set, termination wins for the bootstrap and the chain is cut either way. At the last index the tail starts at 0 but delta still bootstraps from nextValues[n-1]. returns = advantages + values, no normalization, empty input yields empty arrays. Hand-checked: rewards=[1,1,1], values=[0.5,0.5,0.5], nextValues=[0.5,0.5,0.5], terminated=[0,1,0], truncated=[0,0,0], gamma=0.9, lambda=0.95 gives delta=[0.95,0.5,0.95], adv=[0.95+0.855*0.5=1.3775, 0.5, 0.95], and both candidates produce this. Only change from my prior version is precomputing gamma*lambda and using a conditional instead of multiplying by (1-done); both are the same math. Kept defensive coercion of inputs. No remaining disagreements with the peer."
+    }
+  ],
+  "limitations": [
+    "Synthetic RL implementation tasks, not RL training returns, research novelty, or general research ability; no claim of general superiority.",
+    "Equal invocation allowances and per-call timeouts, not equal tokens, dollars, or guaranteed API request counts. Internal CLI retries are not observed.",
+    "The independent-pair baseline matches model mixture, concurrency, and final-provider rotation while withholding peer messages. No grader selects a winner.",
+    "Algorithm contrasts require jointly complete, graded pairs; differential missingness can bias complete-case results. Operational success retains failures separately.",
+    "Bootstrap resamples distinct tasks after averaging their trials. Hidden test cases are not independent statistical samples; six related tasks remain a small domain-specific set.",
+    "The local manifest records the analysis plan before calls but is not an independently timestamped public registration.",
+    "Timeouts and cancellation require the host process to run. Host suspension or scheduling delays can postpone enforcement; no hard wall-clock guarantee during suspension.",
+    "Custom providers must cooperate with AbortSignal. The harness stops waiting but cannot terminate arbitrary external side effects; bundled CLI subprocess groups are terminated.",
+    "Node vm is not a security sandbox for hostile code. Providers receive no private tests, but published synthetic tasks and tests can be inspected by humans and may become contaminated.",
+    "Missing usage remains null. Known token subtotals exclude unreported use; optional cost estimates require supplied prices and are not billing records."
+  ]
+}

@@ -1,0 +1,850 @@
+{
+  "schemaVersion": 2,
+  "createdAt": "2026-09-18T19:56:30.067Z",
+  "config": {
+    "suite": "rl",
+    "taskIds": [
+      "rl-gae-boundaries",
+      "rl-nstep-targets",
+      "rl-ppo-clipped",
+      "rl-tabular-bellman",
+      "rl-vtrace",
+      "rl-experiment-aggregate"
+    ],
+    "modes": [
+      "solo-codex",
+      "solo-claude",
+      "independent-pair",
+      "collaboration"
+    ],
+    "callBudget": 4,
+    "timeoutMs": 90000,
+    "trials": 5,
+    "models": {
+      "codex": "gpt-6-astra",
+      "claude": "claude-fable-5-1[1m]"
+    },
+    "effort": "xhigh",
+    "maxTotalCalls": 480,
+    "plannedCalls": 480,
+    "globalTimeoutMs": 14400000,
+    "deadlineMs": null,
+    "bootstrapSamples": 2000,
+    "bootstrapSeed": 20260919,
+    "stopAfterInitialInfrastructureFailures": 0,
+    "providerKind": "local-cli",
+    "prices": null
+  },
+  "tasks": [
+    {
+      "id": "rl-gae-boundaries",
+      "title": "GAE across termination, truncation, and rollout boundaries",
+      "suite": "rl",
+      "specification": "Implement synchronous function solve(data) returning {advantages, returns}.\ndata has equal-length arrays rewards, values, nextValues, terminated, truncated and scalars gamma, lambda in [0,1]. Length is 0..300. Numerical inputs are finite. nextValues[t] is the value of the actual next/final observation for transition t, NOT the reset observation. Adjacent transitions after a termination or truncation may belong to a new episode.\nUse delta[t] = rewards[t] + gamma*(1-terminated[t])*nextValues[t] - values[t]. GAE sums discounted future deltas with multiplier gamma*lambda while staying in the SAME episode. Both termination and truncation stop propagation to the next transition. Only termination suppresses bootstrap in the current delta. If both flags are true, termination wins. At the end of the available rollout, the future GAE tail is zero but nextValues still provides the final bootstrap. returns[t] = advantages[t]+values[t]. Do not normalize advantages. Empty arrays produce empty arrays.",
+      "sources": [
+        "https://arxiv.org/html/1506.02438v6",
+        "https://gymnasium.farama.org/tutorials/gymnasium_basics/handling_time_limits/"
+      ],
+      "specificationHash": "573c39b868ee0d8c72803e9625b413d7a1965bcdb58fa6c3956512daf71c33e6"
+    },
+    {
+      "id": "rl-nstep-targets",
+      "title": "N-step returns with final-observation bootstrap",
+      "suite": "rl",
+      "specification": "Implement synchronous function solve(data) returning an array of n-step value targets, one per transition.\ndata has equal-length arrays rewards, nextValues, terminated, truncated (length 0..300), integer n>=1 (at most 500), and gamma in [0,1]. All numbers are finite. The trajectory buffer can contain multiple episodes; nextValues[t] is the value of transition t's actual next/final observation, never a reset observation.\nFor each starting transition t, accumulate at most n rewards with successive discount powers. Stop after the first terminated OR truncated transition, or at the buffer's end. After consuming k transitions ending at j, add gamma^k*nextValues[j] unless terminated[j] is true. Thus truncation still bootstraps but must not consume rewards from the next episode. If both flags are true, termination wins. A buffer end without either flag also bootstraps. Empty input returns [].",
+      "sources": [
+        "https://arxiv.org/html/1506.02438v6",
+        "https://gymnasium.farama.org/tutorials/gymnasium_basics/handling_time_limits/"
+      ],
+      "specificationHash": "0bde299f276f512a9c1e530a9e73fe3bfd05dd1a42b48fa16c51097c921b0201"
+    },
+    {
+      "id": "rl-ppo-clipped",
+      "title": "Masked PPO policy and value objectives",
+      "suite": "rl",
+      "specification": "Implement synchronous function solve(data) returning {policyLoss, valueLoss, clipFraction, approxKL}.\ndata has equally sized arrays oldLogProbs, newLogProbs, advantages, oldValues, newValues, returns, mask; scalars epsilon in [0,1), valueClip>=0; boolean normalizeAdvantages. All numbers are finite, each log-probability difference is in [-15,15], and length is 0..1000. Only rows with mask[t] === true count in ANY average or normalization.\nIf normalizeAdvantages is true, center valid advantages by their mean and divide by sqrt(population variance + 1e-8). Otherwise leave them unchanged.\nLet ratio=exp(newLogProb-oldLogProb). policyLoss is NEGATIVE mean(min(ratio*A, clamp(ratio,1-epsilon,1+epsilon)*A)). The min applies even when A is negative. Let clippedValue=oldValue+clamp(newValue-oldValue,-valueClip,valueClip). valueLoss=0.5*mean(max((newValue-return)^2,(clippedValue-return)^2)). clipFraction=mean(abs(ratio-1)>epsilon), using a strict comparison. approxKL=mean((ratio-1)-(newLogProb-oldLogProb)). If no rows are valid return all four values as zero.",
+      "sources": [
+        "https://arxiv.org/abs/1707.06347",
+        "https://spinningup.openai.com/en/latest/algorithms/ppo.html"
+      ],
+      "specificationHash": "353c82d684efabcd171c5d4a239aeb7a0b19302f0b0ae76eaa15072410bdd170"
+    },
+    {
+      "id": "rl-tabular-bellman",
+      "title": "Synchronous finite-horizon Bellman policy evaluation",
+      "suite": "rl",
+      "specification": "Implement synchronous function solve(data) returning {values, qValues, greedyActions}.\ndata contains transitions[s][a], a nonempty array of outcomes {p,next,reward,terminated}; policy[s][a]; initialValues[s]; gamma in [0,1]; and integer horizon in [0,40]. There are 1..12 states, each with 1..5 actions. Outcome probabilities and policy probabilities are nonnegative and sum to one for each distribution. next is a valid state index; rewards and initialValues are finite. A terminated OUTCOME contributes reward but no next-state value, even when next points to a nonterminal state.\nStarting from a copy of initialValues, apply exactly horizon SYNCHRONOUS Bellman expectation sweeps: each sweep computes every new state value from the entire previous vector, weighting all outcomes and all actions by their probabilities. Never update in place and never maximize during policy evaluation.\nAfter the final sweep, compute qValues[s][a] as the one-step expected reward plus discounted final values, using the same termination rule. greedyActions[s] is the index of an action maximizing that qValue; exact ties choose the smallest action index. horizon zero retains initialValues but still computes qValues and greedyActions.",
+      "sources": [
+        "https://spinningup.openai.com/en/latest/spinningup/rl_intro.html"
+      ],
+      "specificationHash": "e4029349ff643839a19330d25f914de790484b0c31c4a39d85b47a69742d4d02"
+    },
+    {
+      "id": "rl-vtrace",
+      "title": "V-trace values and policy advantages with separate clips",
+      "suite": "rl",
+      "specification": "Implement synchronous function solve(data) returning {vs, pgAdvantages}.\ndata has equal-length arrays rewards, values, nextValues, logRhos, terminated, truncated (length 0..200); gamma and lambda in [0,1]; rhoClip>0, cClip>0, pgRhoClip>0. logRhos are in [-10,10]. All numbers are finite. nextValues are actual next/final-observation estimates. Consecutive transitions are in the same episode unless the current terminated or truncated flag is true.\nDefine ratio[t]=exp(logRhos[t]), rho[t]=min(rhoClip,ratio[t]), c[t]=lambda*min(cClip,ratio[t]), discount[t]=gamma*(1-terminated[t]), and delta[t]=rho[t]*(rewards[t]+discount[t]*nextValues[t]-values[t]).\nThe V-trace correction at t is delta[t] plus gamma*c[t] times the correction at t+1 only when t is neither terminated nor truncated and t+1 exists. vs[t]=values[t]+correction[t]. Rollout-end correction beyond the buffer is zero.\nFor policy advantages, bootstrap with vs[t+1] only if t+1 exists and t is neither terminated nor truncated; otherwise use nextValues[t]. pgAdvantages[t]=min(pgRhoClip,ratio[t])*(rewards[t]+discount[t]*bootstrap-values[t]). Both flags stop trace propagation; only termination suppresses bootstrap. Empty input returns two empty arrays.",
+      "sources": [
+        "https://arxiv.org/html/1802.01561v3",
+        "https://gymnasium.farama.org/tutorials/gymnasium_basics/handling_time_limits/"
+      ],
+      "specificationHash": "7880512796573c476bc771ce74ad8008453bf3b46531df277240c2bddc219bd8"
+    },
+    {
+      "id": "rl-experiment-aggregate",
+      "title": "Reproducible fixed-budget aggregation across tasks and seeds",
+      "suite": "rl",
+      "specification": "Implement synchronous function solve(data) returning {tasks, macroMean, iqm}.\ndata is {step, tasks:[{id, baseline, reference, runs:[{seed, checkpoints:[{step,score}]}]}]}. Task IDs are unique ASCII strings, seeds are unique integers within each task, reference>baseline, and all numeric values are finite. At most 30 tasks, 30 runs/task, and 40 checkpoints/run. Checkpoints can be unsorted. Do not mutate input.\nFor each run select the checkpoint with largest step <= data.step; when that step occurs more than once, the LAST occurrence in the input wins. Exclude runs with no eligible checkpoint. Normalize each selected score as (score-baseline)/(reference-baseline); do not clip normalized scores.\nReturn tasks sorted lexicographically by id, each {id,n,seeds,mean,standardError}, where seeds are eligible seed IDs sorted numerically, n is their count, mean is mean normalized score (null if n=0), and standardError=sqrt(unbiased sample variance/n) (null if n<2).\nmacroMean weights each task with n>0 equally, regardless of its number of seeds. iqm is the interquartile mean of those TASK MEANS: sort them, view each as a constant unit-width bin, integrate between positions 0.25*m and 0.75*m, then divide by 0.5*m. Fractionally trim boundary bins; do not round the cutoffs. If no task has eligible runs, macroMean and iqm are null. This explicit task-mean IQM convention is part of this benchmark.",
+      "sources": [
+        "https://arxiv.org/html/2108.13264v4"
+      ],
+      "specificationHash": "09a6c4c7284444767fa58774f7a71e4a973729c18cbd9675de2766b157e117b9"
+    }
+  ],
+  "schedule": [
+    {
+      "taskId": "rl-gae-boundaries",
+      "mode": "solo-codex",
+      "trial": 0,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-gae-boundaries",
+      "mode": "solo-claude",
+      "trial": 0,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-gae-boundaries",
+      "mode": "independent-pair",
+      "trial": 0,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-gae-boundaries",
+      "mode": "collaboration",
+      "trial": 0,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-nstep-targets",
+      "mode": "solo-claude",
+      "trial": 0,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-nstep-targets",
+      "mode": "independent-pair",
+      "trial": 0,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-nstep-targets",
+      "mode": "collaboration",
+      "trial": 0,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-nstep-targets",
+      "mode": "solo-codex",
+      "trial": 0,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-ppo-clipped",
+      "mode": "independent-pair",
+      "trial": 0,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-ppo-clipped",
+      "mode": "collaboration",
+      "trial": 0,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-ppo-clipped",
+      "mode": "solo-codex",
+      "trial": 0,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-ppo-clipped",
+      "mode": "solo-claude",
+      "trial": 0,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-tabular-bellman",
+      "mode": "collaboration",
+      "trial": 0,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-tabular-bellman",
+      "mode": "solo-codex",
+      "trial": 0,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-tabular-bellman",
+      "mode": "solo-claude",
+      "trial": 0,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-tabular-bellman",
+      "mode": "independent-pair",
+      "trial": 0,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-vtrace",
+      "mode": "solo-codex",
+      "trial": 0,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-vtrace",
+      "mode": "solo-claude",
+      "trial": 0,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-vtrace",
+      "mode": "independent-pair",
+      "trial": 0,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-vtrace",
+      "mode": "collaboration",
+      "trial": 0,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-experiment-aggregate",
+      "mode": "solo-claude",
+      "trial": 0,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-experiment-aggregate",
+      "mode": "independent-pair",
+      "trial": 0,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-experiment-aggregate",
+      "mode": "collaboration",
+      "trial": 0,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-experiment-aggregate",
+      "mode": "solo-codex",
+      "trial": 0,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-gae-boundaries",
+      "mode": "solo-claude",
+      "trial": 1,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-gae-boundaries",
+      "mode": "independent-pair",
+      "trial": 1,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-gae-boundaries",
+      "mode": "collaboration",
+      "trial": 1,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-gae-boundaries",
+      "mode": "solo-codex",
+      "trial": 1,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-nstep-targets",
+      "mode": "independent-pair",
+      "trial": 1,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-nstep-targets",
+      "mode": "collaboration",
+      "trial": 1,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-nstep-targets",
+      "mode": "solo-codex",
+      "trial": 1,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-nstep-targets",
+      "mode": "solo-claude",
+      "trial": 1,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-ppo-clipped",
+      "mode": "collaboration",
+      "trial": 1,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-ppo-clipped",
+      "mode": "solo-codex",
+      "trial": 1,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-ppo-clipped",
+      "mode": "solo-claude",
+      "trial": 1,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-ppo-clipped",
+      "mode": "independent-pair",
+      "trial": 1,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-tabular-bellman",
+      "mode": "solo-codex",
+      "trial": 1,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-tabular-bellman",
+      "mode": "solo-claude",
+      "trial": 1,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-tabular-bellman",
+      "mode": "independent-pair",
+      "trial": 1,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-tabular-bellman",
+      "mode": "collaboration",
+      "trial": 1,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-vtrace",
+      "mode": "solo-claude",
+      "trial": 1,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-vtrace",
+      "mode": "independent-pair",
+      "trial": 1,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-vtrace",
+      "mode": "collaboration",
+      "trial": 1,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-vtrace",
+      "mode": "solo-codex",
+      "trial": 1,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-experiment-aggregate",
+      "mode": "independent-pair",
+      "trial": 1,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-experiment-aggregate",
+      "mode": "collaboration",
+      "trial": 1,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-experiment-aggregate",
+      "mode": "solo-codex",
+      "trial": 1,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-experiment-aggregate",
+      "mode": "solo-claude",
+      "trial": 1,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-gae-boundaries",
+      "mode": "independent-pair",
+      "trial": 2,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-gae-boundaries",
+      "mode": "collaboration",
+      "trial": 2,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-gae-boundaries",
+      "mode": "solo-codex",
+      "trial": 2,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-gae-boundaries",
+      "mode": "solo-claude",
+      "trial": 2,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-nstep-targets",
+      "mode": "collaboration",
+      "trial": 2,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-nstep-targets",
+      "mode": "solo-codex",
+      "trial": 2,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-nstep-targets",
+      "mode": "solo-claude",
+      "trial": 2,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-nstep-targets",
+      "mode": "independent-pair",
+      "trial": 2,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-ppo-clipped",
+      "mode": "solo-codex",
+      "trial": 2,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-ppo-clipped",
+      "mode": "solo-claude",
+      "trial": 2,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-ppo-clipped",
+      "mode": "independent-pair",
+      "trial": 2,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-ppo-clipped",
+      "mode": "collaboration",
+      "trial": 2,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-tabular-bellman",
+      "mode": "solo-claude",
+      "trial": 2,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-tabular-bellman",
+      "mode": "independent-pair",
+      "trial": 2,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-tabular-bellman",
+      "mode": "collaboration",
+      "trial": 2,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-tabular-bellman",
+      "mode": "solo-codex",
+      "trial": 2,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-vtrace",
+      "mode": "independent-pair",
+      "trial": 2,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-vtrace",
+      "mode": "collaboration",
+      "trial": 2,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-vtrace",
+      "mode": "solo-codex",
+      "trial": 2,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-vtrace",
+      "mode": "solo-claude",
+      "trial": 2,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-experiment-aggregate",
+      "mode": "collaboration",
+      "trial": 2,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-experiment-aggregate",
+      "mode": "solo-codex",
+      "trial": 2,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-experiment-aggregate",
+      "mode": "solo-claude",
+      "trial": 2,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-experiment-aggregate",
+      "mode": "independent-pair",
+      "trial": 2,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-gae-boundaries",
+      "mode": "collaboration",
+      "trial": 3,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-gae-boundaries",
+      "mode": "solo-codex",
+      "trial": 3,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-gae-boundaries",
+      "mode": "solo-claude",
+      "trial": 3,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-gae-boundaries",
+      "mode": "independent-pair",
+      "trial": 3,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-nstep-targets",
+      "mode": "solo-codex",
+      "trial": 3,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-nstep-targets",
+      "mode": "solo-claude",
+      "trial": 3,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-nstep-targets",
+      "mode": "independent-pair",
+      "trial": 3,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-nstep-targets",
+      "mode": "collaboration",
+      "trial": 3,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-ppo-clipped",
+      "mode": "solo-claude",
+      "trial": 3,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-ppo-clipped",
+      "mode": "independent-pair",
+      "trial": 3,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-ppo-clipped",
+      "mode": "collaboration",
+      "trial": 3,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-ppo-clipped",
+      "mode": "solo-codex",
+      "trial": 3,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-tabular-bellman",
+      "mode": "independent-pair",
+      "trial": 3,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-tabular-bellman",
+      "mode": "collaboration",
+      "trial": 3,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-tabular-bellman",
+      "mode": "solo-codex",
+      "trial": 3,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-tabular-bellman",
+      "mode": "solo-claude",
+      "trial": 3,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-vtrace",
+      "mode": "collaboration",
+      "trial": 3,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-vtrace",
+      "mode": "solo-codex",
+      "trial": 3,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-vtrace",
+      "mode": "solo-claude",
+      "trial": 3,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-vtrace",
+      "mode": "independent-pair",
+      "trial": 3,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-experiment-aggregate",
+      "mode": "solo-codex",
+      "trial": 3,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-experiment-aggregate",
+      "mode": "solo-claude",
+      "trial": 3,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-experiment-aggregate",
+      "mode": "independent-pair",
+      "trial": 3,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-experiment-aggregate",
+      "mode": "collaboration",
+      "trial": 3,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-gae-boundaries",
+      "mode": "solo-codex",
+      "trial": 4,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-gae-boundaries",
+      "mode": "solo-claude",
+      "trial": 4,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-gae-boundaries",
+      "mode": "independent-pair",
+      "trial": 4,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-gae-boundaries",
+      "mode": "collaboration",
+      "trial": 4,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-nstep-targets",
+      "mode": "solo-claude",
+      "trial": 4,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-nstep-targets",
+      "mode": "independent-pair",
+      "trial": 4,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-nstep-targets",
+      "mode": "collaboration",
+      "trial": 4,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-nstep-targets",
+      "mode": "solo-codex",
+      "trial": 4,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-ppo-clipped",
+      "mode": "independent-pair",
+      "trial": 4,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-ppo-clipped",
+      "mode": "collaboration",
+      "trial": 4,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-ppo-clipped",
+      "mode": "solo-codex",
+      "trial": 4,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-ppo-clipped",
+      "mode": "solo-claude",
+      "trial": 4,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-tabular-bellman",
+      "mode": "collaboration",
+      "trial": 4,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-tabular-bellman",
+      "mode": "solo-codex",
+      "trial": 4,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-tabular-bellman",
+      "mode": "solo-claude",
+      "trial": 4,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-tabular-bellman",
+      "mode": "independent-pair",
+      "trial": 4,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-vtrace",
+      "mode": "solo-codex",
+      "trial": 4,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-vtrace",
+      "mode": "solo-claude",
+      "trial": 4,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-vtrace",
+      "mode": "independent-pair",
+      "trial": 4,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-vtrace",
+      "mode": "collaboration",
+      "trial": 4,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-experiment-aggregate",
+      "mode": "solo-claude",
+      "trial": 4,
+      "finalProvider": "claude"
+    },
+    {
+      "taskId": "rl-experiment-aggregate",
+      "mode": "independent-pair",
+      "trial": 4,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-experiment-aggregate",
+      "mode": "collaboration",
+      "trial": 4,
+      "finalProvider": "codex"
+    },
+    {
+      "taskId": "rl-experiment-aggregate",
+      "mode": "solo-codex",
+      "trial": 4,
+      "finalProvider": "codex"
+    }
+  ],
+  "sourceHashes": {
+    "src/eval.js": "07dc8de8235a1450aec3cc041d48f7a8532239af3bc9a5cdf998a87a7f9cafc0",
+    "src/providers.js": "1529d122c7a15b3f22ce4b2984537d720c8db1a1012b3c96e04290d85fc538da",
+    "eval/reporting.js": "8a2e49a5dcfd7136c860d1e9de4f8520b13edf49ad64ac8f4a78e63b2eb80c72",
+    "eval/private-tests.js": "795d442d423d4068fe2dba7a4a463e868ed37653128fd134ba270d95b6c1cff0",
+    "eval/private-rl-tests.js": "a2a39d13969a1baf463f9f3d8bd27d6464328b778407df4026df42226d62e2ee",
+    "eval/grade-worker.js": "09f100307e657c473d40f72f9562afba4208ec94cbf7a6d8425b1236511d18d9"
+  },
+  "promptHash": "a3097db56630a41652a4e0316668034bace3aa5b6d83c6b4874194356eac7070",
+  "grading": {
+    "perCaseTimeoutMs": 150,
+    "processTimeoutMs": 10000,
+    "floatTolerance": "1e-8 * (1 + abs(expected)) for RL tasks",
+    "selection": "Precommitted rotating final provider, last valid candidate; no test-based selection"
+  },
+  "analysisPlan": {
+    "primaryContrast": "collaboration versus independent-pair",
+    "primaryEndpoint": "Task-macro whole-task accuracy among jointly complete, graded task/trial pairs",
+    "secondaryEndpoint": "Operational output success on all planned runs, including failures",
+    "uncertainty": "Percentile bootstrap of distinct tasks after averaging paired trial differences within task; no test-case pseudoreplication",
+    "missingness": "Incomplete pairs excluded from algorithm contrast and counted separately; operational failures retained"
+  },
+  "configHash": "0f1bffb30a05af43de249599166ff34e5a275b8ddbd05f9b968b148413e8a47d",
+  "manifestHash": "0734b8b5ef16dea3119376dcac31677eead322f5de78acec85a4c284884e6a50"
+}

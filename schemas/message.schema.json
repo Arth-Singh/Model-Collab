@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "clientMessageId": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 80
+    },
+    "contextVersion": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "proposal",
+        "challenge",
+        "evidence",
+        "accept",
+        "blocked"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "evidence": {
+      "default": [],
+      "maxItems": 10,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1000
+      }
+    },
+    "candidate": {
+      "type": "string",
+      "maxLength": 80
+    },
+    "solution": {
+      "type": "string",
+      "maxLength": 16000
+    },
+    "files": {
+      "default": [],
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+      }
+    },
+    "repliesTo": {
+      "type": "string",
+      "maxLength": 80
+    },
+    "resolves": {
+      "default": [],
+      "maxItems": 10,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 80
+      }
+    }
+  },
+  "required": [
+    "clientMessageId",
+    "kind",
+    "summary"
+  ],
+  "additionalProperties": false
+}
