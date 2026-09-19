@@ -18,6 +18,13 @@ and evaluation protocol. In math, check assumptions and boundary cases. In code,
 connect the equation to tensor shapes, indexing, masks, and a small numeric case.
 Never infer research success solely from training loss or a passing unit test.
 
+Establish input types, tensor shapes, and return values from repository call
+sites and public fixtures. A paper or a parameter name alone does not define an
+executable interface. Before adopting a peer's change, check that it preserves
+the caller's contract. If the paper and code describe different algorithm
+versions, identify the conflict and intended target explicitly; do not silently
+choose one or treat a reference mismatch as proof of a mathematical error.
+
 ## Compare evidence
 
 Use the project and primary sources. For a paper claim, give the title, URL/DOI/

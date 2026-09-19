@@ -1,0 +1,352 @@
+{
+  "benchmark": "ResearchCodeBench three-task pilot",
+  "upstreamCommit": "db3d16d94cfa6b6785bef6f1db0263edfe6f1d34",
+  "frozenAt": "2026-09-19T14:36:48.856Z",
+  "allFinalsLockedAt": "2026-09-19T15:01:49.383Z",
+  "gradedAt": "2026-09-19T15:01:55.178Z",
+  "models": {
+    "codex": "gpt-6-astra",
+    "claude": "claude-fable-5-1[1m]"
+  },
+  "requestedEffort": "xhigh",
+  "observedModelIds": {
+    "codex": [],
+    "claude": ["claude-fable-5-1"]
+  },
+  "observedEffort": null,
+  "modelSamplingSeed": null,
+  "gradingSeed": 42,
+  "repetitionsPerTask": 1,
+  "scope": "Custom collaboration protocol on an upstream subset. Not the full benchmark, LOC-weighted leaderboard score, or native terminal package evaluation.",
+  "metric": "Reference-test pass count on tasks for which all four conditions completed; incomplete tasks excluded.",
+  "manifestSha256": "f2d43476637c69268ab0368f22e514129ddff5eb7206eba07b4989e86a72227e",
+  "rawResultsSha256": "9b0cdff48d8731af993c545f8ce05f01b5f5f35ab78d539ec428b8b460a1cbf0",
+  "inputHashes": {
+    "prepare.py": "f145c73b59af6936eab74a6d3de0262c32e6e4e0b6a7d0b9573a6ddfd9211f86",
+    "grade.py": "afe90446acb3d2b89e150c68a271388d7b33e0198d7c4ab1f50b1113461e559f",
+    "tasks.json": "0a10da9f469e94a99161c0db22c69efb43bc0c361392fb2d070637d675913a16",
+    "prompts.json": "5576748f89fbe78ad429c1fefe60ffdbf2bd178e7f98087966a300ccafa7afbb",
+    "run-v2.mjs": "45172260f41062994b75fbf47027098490ff649da3f99d9a93b3279e61c2e067",
+    "../snapshot-58b9429-5NW1gQ/src/providers.js": "1529d122c7a15b3f22ce4b2984537d720c8db1a1012b3c96e04290d85fc538da"
+  },
+  "launchedCalls": 42,
+  "failedCalls": 6,
+  "stopReason": "three_provider_failures",
+  "reportedTokens": 1969354,
+  "usageReportedCalls": 36,
+  "matchedTasks": ["Diff-Transformer", "schedule_free"],
+  "completedTaskComparison": {
+    "solo-codex": {
+      "passed": 0,
+      "total": 2
+    },
+    "solo-claude": {
+      "passed": 1,
+      "total": 2
+    },
+    "independent-pair": {
+      "passed": 0,
+      "total": 2
+    },
+    "collaboration": {
+      "passed": 0,
+      "total": 2
+    }
+  },
+  "paired": {
+    "solo-codex": {
+      "wins": 0,
+      "losses": 0,
+      "ties": 2,
+      "differencePercentagePoints": 0.0
+    },
+    "solo-claude": {
+      "wins": 0,
+      "losses": 1,
+      "ties": 1,
+      "differencePercentagePoints": -50.0
+    },
+    "independent-pair": {
+      "wins": 0,
+      "losses": 0,
+      "ties": 2,
+      "differencePercentagePoints": 0.0
+    }
+  },
+  "submissions": [
+    {
+      "id": "schedule_free--trial-1--solo-codex",
+      "task": "schedule_free",
+      "trial": 1,
+      "mode": "solo-codex",
+      "finalProvider": "codex",
+      "complete": true,
+      "lockedAt": "2026-09-19T14:43:21.548Z",
+      "passed": false,
+      "gradingStage": "official_tests",
+      "testCount": 1,
+      "launchedCalls": 4,
+      "failedCalls": 0,
+      "usageReportedCalls": 4,
+      "reportedTokens": 182140,
+      "includedInComparison": true,
+      "status": "fail"
+    },
+    {
+      "id": "schedule_free--trial-1--solo-claude",
+      "task": "schedule_free",
+      "trial": 1,
+      "mode": "solo-claude",
+      "finalProvider": "claude",
+      "complete": true,
+      "lockedAt": "2026-09-19T14:49:59.269Z",
+      "passed": false,
+      "gradingStage": "official_tests",
+      "testCount": 1,
+      "launchedCalls": 4,
+      "failedCalls": 0,
+      "usageReportedCalls": 4,
+      "reportedTokens": 291250,
+      "includedInComparison": true,
+      "status": "fail"
+    },
+    {
+      "id": "schedule_free--trial-1--independent-pair",
+      "task": "schedule_free",
+      "trial": 1,
+      "mode": "independent-pair",
+      "finalProvider": "codex",
+      "complete": true,
+      "lockedAt": "2026-09-19T14:43:21.398Z",
+      "passed": false,
+      "gradingStage": "official_tests",
+      "testCount": 1,
+      "launchedCalls": 4,
+      "failedCalls": 0,
+      "usageReportedCalls": 4,
+      "reportedTokens": 224809,
+      "includedInComparison": true,
+      "status": "fail"
+    },
+    {
+      "id": "schedule_free--trial-1--collaboration",
+      "task": "schedule_free",
+      "trial": 1,
+      "mode": "collaboration",
+      "finalProvider": "codex",
+      "complete": true,
+      "lockedAt": "2026-09-19T14:48:01.400Z",
+      "passed": false,
+      "gradingStage": "official_tests",
+      "testCount": 1,
+      "launchedCalls": 4,
+      "failedCalls": 0,
+      "usageReportedCalls": 4,
+      "reportedTokens": 254986,
+      "includedInComparison": true,
+      "status": "fail"
+    },
+    {
+      "id": "Diff-Transformer--trial-1--solo-claude",
+      "task": "Diff-Transformer",
+      "trial": 1,
+      "mode": "solo-claude",
+      "finalProvider": "claude",
+      "complete": true,
+      "lockedAt": "2026-09-19T14:54:41.294Z",
+      "passed": true,
+      "gradingStage": "official_tests",
+      "testCount": 5,
+      "launchedCalls": 4,
+      "failedCalls": 0,
+      "usageReportedCalls": 4,
+      "reportedTokens": 257889,
+      "includedInComparison": true,
+      "status": "pass"
+    },
+    {
+      "id": "Diff-Transformer--trial-1--independent-pair",
+      "task": "Diff-Transformer",
+      "trial": 1,
+      "mode": "independent-pair",
+      "finalProvider": "claude",
+      "complete": true,
+      "lockedAt": "2026-09-19T14:50:53.062Z",
+      "passed": false,
+      "gradingStage": "official_tests",
+      "testCount": 5,
+      "launchedCalls": 4,
+      "failedCalls": 0,
+      "usageReportedCalls": 4,
+      "reportedTokens": 213386,
+      "includedInComparison": true,
+      "status": "fail"
+    },
+    {
+      "id": "Diff-Transformer--trial-1--collaboration",
+      "task": "Diff-Transformer",
+      "trial": 1,
+      "mode": "collaboration",
+      "finalProvider": "claude",
+      "complete": true,
+      "lockedAt": "2026-09-19T14:57:48.350Z",
+      "passed": false,
+      "gradingStage": "official_tests",
+      "testCount": 5,
+      "launchedCalls": 4,
+      "failedCalls": 0,
+      "usageReportedCalls": 4,
+      "reportedTokens": 226994,
+      "includedInComparison": true,
+      "status": "fail"
+    },
+    {
+      "id": "Diff-Transformer--trial-1--solo-codex",
+      "task": "Diff-Transformer",
+      "trial": 1,
+      "mode": "solo-codex",
+      "finalProvider": "codex",
+      "complete": true,
+      "lockedAt": "2026-09-19T14:56:35.004Z",
+      "passed": false,
+      "gradingStage": "official_tests",
+      "testCount": 5,
+      "launchedCalls": 4,
+      "failedCalls": 0,
+      "usageReportedCalls": 4,
+      "reportedTokens": 169158,
+      "includedInComparison": true,
+      "status": "fail"
+    },
+    {
+      "id": "OptimalSteps--trial-1--independent-pair",
+      "task": "OptimalSteps",
+      "trial": 1,
+      "mode": "independent-pair",
+      "finalProvider": "codex",
+      "complete": false,
+      "lockedAt": "2026-09-19T15:01:49.372Z",
+      "passed": null,
+      "gradingStage": "missing_final",
+      "testCount": null,
+      "launchedCalls": 3,
+      "failedCalls": 2,
+      "usageReportedCalls": 1,
+      "reportedTokens": 39573,
+      "includedInComparison": false,
+      "status": "incomplete"
+    },
+    {
+      "id": "OptimalSteps--trial-1--collaboration",
+      "task": "OptimalSteps",
+      "trial": 1,
+      "mode": "collaboration",
+      "finalProvider": "codex",
+      "complete": false,
+      "lockedAt": "2026-09-19T15:01:49.383Z",
+      "passed": null,
+      "gradingStage": "missing_final",
+      "testCount": null,
+      "launchedCalls": 3,
+      "failedCalls": 2,
+      "usageReportedCalls": 1,
+      "reportedTokens": 37074,
+      "includedInComparison": false,
+      "status": "incomplete"
+    },
+    {
+      "id": "OptimalSteps--trial-1--solo-codex",
+      "task": "OptimalSteps",
+      "trial": 1,
+      "mode": "solo-codex",
+      "finalProvider": "codex",
+      "complete": false,
+      "lockedAt": "2026-09-19T15:01:48.877Z",
+      "passed": null,
+      "gradingStage": "missing_final",
+      "testCount": null,
+      "launchedCalls": 3,
+      "failedCalls": 1,
+      "usageReportedCalls": 2,
+      "reportedTokens": 72095,
+      "includedInComparison": false,
+      "status": "incomplete"
+    },
+    {
+      "id": "OptimalSteps--trial-1--solo-claude",
+      "task": "OptimalSteps",
+      "trial": 1,
+      "mode": "solo-claude",
+      "finalProvider": "claude",
+      "complete": false,
+      "lockedAt": "2026-09-19T15:01:49.371Z",
+      "passed": null,
+      "gradingStage": "missing_final",
+      "testCount": null,
+      "launchedCalls": 1,
+      "failedCalls": 1,
+      "usageReportedCalls": 0,
+      "reportedTokens": 0,
+      "includedInComparison": false,
+      "status": "incomplete"
+    }
+  ],
+  "priorAttempt": {
+    "launchedCalls": 11,
+    "recordedCompletions": 7,
+    "timeoutCalls": 2,
+    "terminatedInFlight": 4,
+    "excluded": true,
+    "reason": "Runtime-cap calibration; stopped before final submissions or grading."
+  },
+  "allConditionDiagnostics": {
+    "solo-codex": {
+      "passed": 0,
+      "total": 3,
+      "complete": 2,
+      "reportedTokens": 423393,
+      "failedCalls": 1,
+      "byTask": {
+        "Diff-Transformer": 0,
+        "OptimalSteps": 0,
+        "schedule_free": 0
+      }
+    },
+    "solo-claude": {
+      "passed": 1,
+      "total": 3,
+      "complete": 2,
+      "reportedTokens": 549139,
+      "failedCalls": 1,
+      "byTask": {
+        "Diff-Transformer": 1,
+        "OptimalSteps": 0,
+        "schedule_free": 0
+      }
+    },
+    "independent-pair": {
+      "passed": 0,
+      "total": 3,
+      "complete": 2,
+      "reportedTokens": 477768,
+      "failedCalls": 2,
+      "byTask": {
+        "Diff-Transformer": 0,
+        "OptimalSteps": 0,
+        "schedule_free": 0
+      }
+    },
+    "collaboration": {
+      "passed": 0,
+      "total": 3,
+      "complete": 2,
+      "reportedTokens": 519054,
+      "failedCalls": 2,
+      "byTask": {
+        "Diff-Transformer": 0,
+        "OptimalSteps": 0,
+        "schedule_free": 0
+      }
+    }
+  }
+}

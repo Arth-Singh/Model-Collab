@@ -129,17 +129,14 @@ for limits, checks, and alternate workflows.
 
 ## Early findings
 
-In ten repeated trials of one GAE programming task, all four setups solved every
-trial. The collaborating pair averaged 52.7 seconds; the independent pair averaged
-54.1 seconds. This task showed no accuracy advantage from collaboration. Pair
-rounds ran in parallel, while solo refinement was sequential.
+Small pilots have not established a quality advantage from collaboration.
+A ResearchCodeBench pilot completed two task comparisons and exposed material
+paper-to-code specification mismatches; a third comparison remained incomplete.
+See the [results, figure, and benchmark audit](docs/research-code.md).
 
-![Wall time across ten trials](docs/findings/gae-10-trials.svg)
-
-See [results and method](docs/findings.md) for per-trial data and limitations, or
-[download the figure](docs/findings/gae-10-trials.png). This bounded benchmark used
-a separate answer-exchange prompt; it does not evaluate the current terminal
-workflow or the revised collaboration prompts.
+An earlier GAE programming task was solved in all ten trials by every setup.
+The [GAE results](docs/findings.md) retain the measurements and limitations.
+Evaluation runners and raw traces are kept outside this package.
 
 ## Documentation
 
