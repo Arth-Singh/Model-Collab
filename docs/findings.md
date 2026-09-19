@@ -2,7 +2,7 @@
 
 All four setups solved the GAE task in all ten trials. Collaboration preserved correctness, but this task showed no accuracy advantage over either model alone or an independent pair.
 
-![Correctness and wall time for ten trials of four model configurations](findings/gae-10-trials.svg)
+![Wall time for ten trials of four model configurations](findings/gae-10-trials.svg)
 
 [Download PNG](findings/gae-10-trials.png) · [Download SVG](findings/gae-10-trials.svg) · [Per-trial data](findings/gae-10-trials.json)
 

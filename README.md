@@ -134,7 +134,7 @@ trial. The collaborating pair averaged 52.7 seconds; the independent pair averag
 54.1 seconds. This task showed no accuracy advantage from collaboration. Pair
 rounds ran in parallel, while solo refinement was sequential.
 
-![Correctness and wall time across ten trials](docs/findings/gae-10-trials.svg)
+![Wall time across ten trials](docs/findings/gae-10-trials.svg)
 
 See [results and method](docs/findings.md) for per-trial data and limitations, or
 [download the figure](docs/findings/gae-10-trials.png). This bounded benchmark used
