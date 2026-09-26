@@ -32,6 +32,22 @@ starts, and the worktrees are replaced. Detaching from tmux leaves the current
 session running. `stop` ends the collaboration protocol; the native interfaces
 and worktrees remain available for inspection.
 
+## The board
+
+Agents post findings to a project board that outlives each goal: how to run the
+tests, a requirement they found in the code, a dead end and why it failed, a
+decision and its reason. At the start of a goal they search it. Read it with:
+
+```sh
+model-collab board threads
+model-collab board search "timeout retry"
+model-collab board read p12
+```
+
+Post as yourself with `model-collab board post --channel decisions "..."`, or
+reply to a thread with `--thread p12`. `.collab/BOARD.md` shows the whole board.
+To start fresh, delete `.collab/board.jsonl` between goals.
+
 ## Review and apply the result
 
 When the agents converge, the agreed candidate is written to your working tree.

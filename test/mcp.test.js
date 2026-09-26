@@ -35,6 +35,11 @@ test('two real MCP clients exchange sealed proposals and converge with fixed par
   const [codex, claude] = clients;
   const tools = (await codex.listTools()).tools.map((tool) => tool.name);
   assert.deepEqual(tools.sort(), [
+    'collab_board_post',
+    'collab_board_read_post',
+    'collab_board_read_thread',
+    'collab_board_search',
+    'collab_board_threads',
     'collab_checkout',
     'collab_diff',
     'collab_post',
@@ -64,9 +69,17 @@ test('two real MCP clients exchange sealed proposals and converge with fixed par
       },
     }),
   );
+  const posted = decoded(
+    await codex.callTool({
+      name: 'collab_board_post',
+      arguments: { channel: 'findings', text: 'Adjacent intervals share an endpoint only.' },
+    }),
+  );
+  assert.equal(posted.post.author, 'codex');
   const sealed = decoded(await claude.callTool({ name: 'collab_status', arguments: {} }));
   assert.deepEqual(sealed.session.messages, []);
   assert.deepEqual(sealed.session.candidates, []);
+  assert.equal(sealed.board.posts, 0);
   const rejected = await codex.callTool({
     name: 'collab_post',
     arguments: {
@@ -91,6 +104,13 @@ test('two real MCP clients exchange sealed proposals and converge with fixed par
         solution: 'The intersection [max(start), min(end)) is nonempty.',
       },
     }),
+  );
+  const found = decoded(
+    await claude.callTool({ name: 'collab_board_search', arguments: { query: 'endpoint' } }),
+  );
+  assert.deepEqual(
+    found.results.map((post) => [post.id, post.author]),
+    [[posted.post.id, 'codex']],
   );
   const shared = decoded(await codex.callTool({ name: 'collab_status', arguments: {} }));
   assert.deepEqual(

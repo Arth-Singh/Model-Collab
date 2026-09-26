@@ -2,8 +2,28 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import lockfile from 'proper-lockfile';
-import { configSchema, messageSchema, startSchema } from './schema.js';
+import {
+  boardPostSchema,
+  boardReadPostSchema,
+  boardReadThreadSchema,
+  boardSearchSchema,
+  boardThreadsSchema,
+  configSchema,
+  messageSchema,
+  startSchema,
+} from './schema.js';
 import { runCommand } from './process.js';
+import {
+  BoardStore,
+  POSTS_PER_GOAL,
+  boardSummary,
+  listThreads,
+  readPost,
+  readThread,
+  renderBoard,
+  searchPosts,
+  visiblePosts,
+} from './board.js';
 import {
   applyCandidate,
   candidateDiff,
@@ -24,6 +44,14 @@ const fail = (message) => {
 const active = (s) => s?.status === 'active';
 const open = (s) => active(s) || s?.status === 'paused';
 const current = (m, s) => (m.contextVersion ?? 0) === (s.contextVersion ?? 0);
+
+const postReceipt = ({ id, channel, thread, author, createdAt }) => ({
+  id,
+  channel,
+  thread,
+  author,
+  createdAt,
+});
 
 async function atomicWrite(file, content) {
   const temp = `${file}.${randomUUID()}.tmp`;
@@ -46,6 +74,7 @@ export class Collaboration {
     this.root = path.resolve(root);
     this.dir = path.join(this.root, '.collab');
     this.file = path.join(this.dir, 'state.json');
+    this.board = new BoardStore(this.dir);
   }
 
   candidateFiles(id) {
@@ -215,10 +244,15 @@ export class Collaboration {
   }
 
   async status(agent) {
-    return this.transaction((state) => {
+    return this.transaction(async (state) => {
       if (agent) this.requireAgent(state, agent);
       const view = structuredClone(state),
         s = view.session;
+      view.board = boardSummary(
+        visiblePosts(await this.board.posts(), state.session, agent),
+        state.session,
+        agent,
+      );
       if (!s) return view;
       s.roundsRemaining = Math.max(0, state.config.maxRounds - s.round);
       if (agent) {
@@ -635,6 +669,103 @@ export class Collaboration {
         return state;
       await new Promise((resolve) => setTimeout(resolve, Math.min(250, until - Date.now())));
     } while (true);
+  }
+
+  /**
+   * Post to the project board as a participant or as 'user'. A post names one
+   * destination: a channel (starting a thread, creating the channel if needed)
+   * or a thread (replying to its first post).
+   */
+  async boardPost(author, input) {
+    const body = boardPostSchema.parse(input);
+    if ((body.channel === undefined) === (body.thread === undefined))
+      fail('Give exactly one destination: channel to start a thread, or thread to reply.');
+    const fingerprint = hash(
+      JSON.stringify({ text: body.text, channel: body.channel, thread: body.thread }),
+    );
+    return this.transaction(async (state) => {
+      const human = author === 'user';
+      if (!human) this.requireAgent(state, author);
+      const s = state.session;
+      if (!human && s?.status === 'paused') fail('The session is paused. Wait for the user.');
+      const posts = await this.board.posts();
+      const prior = body.requestId
+        ? posts.find((p) => p.author === author && p.requestId === body.requestId)
+        : null;
+      if (prior) {
+        if (prior.fingerprint !== fingerprint) fail('requestId already used for a different post.');
+        return { post: postReceipt(prior), duplicate: true };
+      }
+      let channel = body.channel,
+        thread = null;
+      if (body.thread) {
+        const root = visiblePosts(posts, s, human ? undefined : author).find(
+          (p) => p.id === body.thread,
+        );
+        if (!root) fail(`Unknown thread ${body.thread}.`);
+        if (root.thread !== root.id)
+          fail(`${root.id} is a reply; reply to its thread ${root.thread}.`);
+        channel = root.channel;
+        thread = root.id;
+      }
+      if (posts.some((p) => p.author === author && p.fingerprint === fingerprint))
+        fail('You already posted this text there.');
+      const sessionId = open(s) ? s.id : null;
+      if (
+        !human &&
+        sessionId &&
+        posts.filter((p) => p.author === author && p.sessionId === sessionId).length >=
+          POSTS_PER_GOAL
+      )
+        fail(
+          `Board limit reached: ${POSTS_PER_GOAL} posts per peer per goal. Put further findings in your next protocol message.`,
+        );
+      const seq = posts.reduce((max, p) => Math.max(max, p.seq), 0) + 1;
+      const post = {
+        seq,
+        id: `p${seq}`,
+        channel,
+        thread: thread ?? `p${seq}`,
+        author,
+        sessionId,
+        round: sessionId ? s.round : null,
+        createdAt: now(),
+        text: body.text,
+        requestId: body.requestId ?? null,
+        fingerprint,
+      };
+      await this.board.append(post);
+      await atomicWrite(path.join(this.dir, 'BOARD.md'), renderBoard(await this.board.posts()));
+      return { post: postReceipt(post), duplicate: false };
+    });
+  }
+
+  // Board reads see what the viewer may see; no viewer means the user.
+  async boardView(viewer, fn) {
+    return this.transaction(async (state) => {
+      if (viewer) this.requireAgent(state, viewer);
+      return fn(visiblePosts(await this.board.posts(), state.session, viewer), state.session);
+    });
+  }
+
+  async boardSearch(viewer, input) {
+    const query = boardSearchSchema.parse(input);
+    return this.boardView(viewer, (posts, s) => searchPosts(posts, s, query));
+  }
+
+  async boardThreads(viewer, input) {
+    const query = boardThreadsSchema.parse(input);
+    return this.boardView(viewer, (posts, s) => listThreads(posts, s, query));
+  }
+
+  async boardReadThread(viewer, input) {
+    const query = boardReadThreadSchema.parse(input);
+    return this.boardView(viewer, (posts, s) => readThread(posts, s, query));
+  }
+
+  async boardReadPost(viewer, input) {
+    const query = boardReadPostSchema.parse(input);
+    return this.boardView(viewer, (posts, s) => readPost(posts, s, query));
   }
 
   async transcript(format = 'jsonl') {

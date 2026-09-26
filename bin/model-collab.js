@@ -5,7 +5,13 @@ import path from 'node:path';
 import { Collaboration } from '../src/core.js';
 import { configSchema, sessionIdSchema } from '../src/schema.js';
 import { launch, serverConfig, writeInstructions } from '../src/setup.js';
-import { renderStartup, renderStatus, renderWorkerEvent } from '../src/display.js';
+import {
+  renderBoardPosts,
+  renderBoardThreads,
+  renderStartup,
+  renderStatus,
+  renderWorkerEvent,
+} from '../src/display.js';
 import { DEFAULT_EFFORT, DEFAULT_MODELS } from '../src/native.js';
 import { DEFAULT_TURN_TIMEOUT_MS } from '../src/worker.js';
 
@@ -26,6 +32,14 @@ const list = (value) =>
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
+async function textInput(value) {
+  if (value === '-') {
+    let text = '';
+    for await (const chunk of process.stdin) text += chunk;
+    return text;
+  }
+  return value.startsWith('@') ? fs.readFile(value.slice(1), 'utf8') : value;
+}
 async function jsonInput(value) {
   if (value === '-') {
     let text = '';
@@ -334,6 +348,84 @@ withRepo(
   .requiredOption('--agent <id>')
   .option('--timeout <ms>', 'Maximum 300000 ms', Number, 300000)
   .action(async (opts) => output(await core(opts).awaitTurn(opts.agent, opts.timeout)));
+const board = program
+  .command('board')
+  .description('Read and write the project board, which keeps findings across goals.');
+const viewerOption = (command) =>
+  withRepo(command)
+    .option('--agent <id>', 'Read as this peer (sealed peer posts stay hidden); default: you')
+    .option('--json', 'Print JSON');
+withRepo(
+  board
+    .command('post')
+    .description('Post to the board.')
+    .argument('<text>', 'Text, @file, or - for stdin'),
+)
+  .option('--channel <name>', 'Start a thread in this channel')
+  .option('--thread <id>', "Reply to this thread's first post")
+  .option('--agent <id>', 'Post as this peer; default: user')
+  .option('--request-id <id>', 'Retry-safe identifier for this post')
+  .option('--json', 'Print JSON')
+  .action(async (text, opts) => {
+    const result = await core(opts).boardPost(opts.agent ?? 'user', {
+      text: await textInput(text),
+      channel: opts.channel,
+      thread: opts.thread,
+      requestId: opts.requestId,
+    });
+    output(opts.json ? result : `Posted ${result.post.id} in #${result.post.channel}.`);
+  });
+viewerOption(board.command('search').description('Search posts, newest first.').argument('[query]'))
+  .option('--channel <name>')
+  .option('--author <id>')
+  .option('--after <id>', 'Only posts after this post')
+  .option('--limit <n>', 'Maximum results', Number, 20)
+  .option('--cursor <cursor>')
+  .action(async (query, opts) => {
+    const result = await core(opts).boardSearch(opts.agent, {
+      query,
+      channel: opts.channel,
+      author: opts.author,
+      after: opts.after,
+      limit: opts.limit,
+      cursor: opts.cursor,
+      maxChars: 4000,
+    });
+    output(opts.json ? result : renderBoardPosts(result));
+  });
+viewerOption(board.command('threads').description('List threads, most recently active first.'))
+  .option('--channel <name>')
+  .option('--sort <order>', 'activity or created', 'activity')
+  .option('--limit <n>', 'Maximum results', Number, 20)
+  .option('--cursor <cursor>')
+  .action(async (opts) => {
+    const result = await core(opts).boardThreads(opts.agent, {
+      channel: opts.channel,
+      sort: opts.sort,
+      limit: opts.limit,
+      cursor: opts.cursor,
+    });
+    output(opts.json ? result : renderBoardThreads(result));
+  });
+viewerOption(
+  board.command('read').description('Read a post; for a thread, its replies too.').argument('<id>'),
+).action(async (id, opts) => {
+  const collab = core(opts);
+  const post = await collab.boardReadPost(opts.agent, { post: id });
+  const thread =
+    post.thread === post.id
+      ? await collab.boardReadThread(opts.agent, { thread: id, limit: 50, maxChars: 4000 })
+      : null;
+  if (opts.json) output({ post, replies: thread?.replies ?? null });
+  else
+    output(
+      [
+        renderBoardPosts({ results: [post] }),
+        ...(thread?.replies.results.length ? [renderBoardPosts(thread.replies)] : []),
+      ].join('\n\n'),
+    );
+});
+
 withRepo(program.command('export'))
   .option('--format <type>', 'jsonl or markdown', 'jsonl')
   .action(async (opts) => {

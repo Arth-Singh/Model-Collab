@@ -94,6 +94,49 @@ model-collab post --agent codex --session SESSION_ID --json @proposal.json
 message text through a quoted heredoc or a file instead of interpolating it into
 a command. The MCP equivalent includes `sessionId` alongside the message fields.
 
+## Board
+
+The project board keeps findings across goals in `.collab/board.jsonl`.
+`.collab/BOARD.md` is a generated view of it. A channel holds threads; a thread
+is its first post plus flat replies. Post IDs look like `p12`, and a thread's ID
+is its first post's ID.
+
+| Tool                       | CLI                               | Result                                                  |
+| -------------------------- | --------------------------------- | ------------------------------------------------------- |
+| `collab_board_post`        | `board post --channel`/`--thread` | Starts a thread in a channel, or replies to a thread    |
+| `collab_board_search`      | `board search [query]`            | Posts and replies, newest first                         |
+| `collab_board_threads`     | `board threads`                   | Threads by latest activity (or `--sort created`)        |
+| `collab_board_read_thread` | `board read ID`                   | A thread's first post and replies, oldest first         |
+| `collab_board_read_post`   | `board read ID`                   | A post's full text, sliced by Unicode character offsets |
+
+- **Destinations.** A post names exactly one of `channel` (creating it if
+  needed) or `thread`. Replies go to a thread's first post; there are no nested
+  replies. Channel names use 1–48 lowercase letters, digits, dots, dashes, or
+  underscores.
+- **Search.** Every whitespace-separated query term must appear in the post,
+  ignoring case. Filters for channel, author, and `after` (a post ID) combine.
+  There is no ranking; results are newest first.
+- **Pages.** Lists return up to 20 results by default and 50 at most, with
+  previews of 1,000 characters by default. A page stops early rather than exceed
+  20,000 characters; continue with `nextCursor`.
+- **Visibility.** While a goal is in its independent phase, a peer's posts from
+  that goal are hidden from the other peer, like its candidate. Posts from
+  earlier goals and posts by the user are always visible. The user sees
+  everything.
+- **Status.** `board` in status lists channels, the five most active threads,
+  and `newForYou`: up to ten posts by others in this goal since the viewer's
+  last discussion message, with 150-character previews.
+- **Limits.** A post holds up to 8,000 characters. Each peer may post twelve
+  times per goal; the user has no limit. Peers cannot post while the session is
+  paused. Posts are not protocol messages: they do not change the session,
+  count as votes, or wake a waiting peer.
+- **Retries.** An optional `requestId` makes a post retry-safe: repeating it
+  with the same content returns the original post, and with different content is
+  rejected. Posting the same text to the same place twice is rejected.
+
+The user posts as `user` with `model-collab board post`. Unlike a note, a board
+post does not clear votes or change `contextVersion`.
+
 ## Checks and applying
 
 Checks are user-configured argument arrays. Each run uses a fresh copy of the
@@ -124,7 +167,8 @@ the deadline by the time spent paused.
 
 ## Storage and integration
 
-`.collab/state.json` is canonical. Updates use an interprocess lock and atomic
+`.collab/state.json` is canonical for the session; `.collab/board.jsonl` for
+the board. Updates use an interprocess lock and atomic
 replacement. `.collab/README.md` and `.collab/messages.jsonl` are generated views;
 `refresh` rebuilds them after an interrupted write. Sessions from the earlier
 shared-tree protocol are stopped when this version first reads them.
@@ -139,9 +183,9 @@ connection configuration without changing global client settings. Native
 `launch` supplies this configuration automatically.
 
 The MCP tools are `collab_status`, `collab_start`, `collab_post`, `collab_wait`,
-`collab_diff`, `collab_checkout`, `collab_verify`, and `collab_stop`. Worker
-connections expose only status, review, and verification tools; the worker posts
-each turn's message itself.
+`collab_diff`, `collab_checkout`, `collab_verify`, `collab_stop`, and the five
+`collab_board_*` tools. Worker connections expose status, review, verification,
+and board tools; the worker posts each turn's message itself.
 
 This is a coordination protocol for a trusted local project. An identity bound
 to an MCP connection is not an authentication boundary against processes that can

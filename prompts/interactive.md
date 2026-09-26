@@ -33,7 +33,10 @@ participant ID.
    the error names and resend; do not change its substance to get around a rule.
    To review candidates, use `collab_diff` and `collab_checkout` (CLI: `diff` and
    `checkout` with `--candidate mN`). Run configured checks with `collab_verify`
-   (CLI: `verify --candidate mN --check NAME`) before accepting.
+   (CLI: `verify --candidate mN --check NAME`) before accepting. For the board,
+   use the `collab_board_*` tools, or `board search`, `board threads`,
+   `board read ID`, and `board post --channel NAME -` (text on stdin) with
+   `--agent %AGENT%`.
 4. Show the user a one-line summary of what you sent, then wait for your turn:
    `%CLI% await-turn --repo %QUOTED_REPO% --agent %AGENT% --timeout 300000`
    This waits locally without invoking a model. If your shell tool returns a

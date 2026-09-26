@@ -52,6 +52,22 @@ test('project setup and controls provide readable output while preserving JSON a
   assert.equal(changed.maxRounds, 6);
   assert.deepEqual(changed.dependencyDirs, ['node_modules', 'target']);
   assert.match(await run('start', 'Inspect the project.'), /Goal: Inspect the project/);
+  assert.match(
+    await run('board', 'post', '--channel', 'decisions', 'Keep the public API.'),
+    /Posted p1 in #decisions/,
+  );
+  assert.match(
+    await run('board', 'post', '--agent', 'codex', '--thread', 'p1', 'parse_all is public.'),
+    /Posted p2 in #decisions/,
+  );
+  assert.match(
+    await run('board', 'search', 'public'),
+    /p2 · #decisions · codex[^]*p1 · #decisions · user/,
+  );
+  assert.doesNotMatch(await run('board', 'search', '--agent', 'claude'), /codex/);
+  assert.match(await run('board', 'read', 'p1'), /Keep the public API[^]*reply in p1/);
+  assert.match(await run('board', 'threads'), /1 reply/);
+  assert.match(await run('status', '--human'), /Board: 2 posts in decisions/);
   const denied = await runCommand([
     process.execPath,
     cli,

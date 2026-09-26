@@ -34,6 +34,14 @@ between two models is weak evidence.
 information and underuse facts that only one member holds
 ([Stasser and Titus, 1985](https://doi.org/10.1037/0022-3514.48.6.1467)).
 
+**Teams lose what they learned.** Groups hold knowledge collectively: members
+rely on shared records and on knowing who knows what (Wegner, "Transactive
+Memory: A Contemporary Analysis of the Group Mind", in _Theories of Group
+Behavior_, 1987). Agents get neither by default, and each session starts with
+no memory of the last. OpenAI's Codex gives its agents a
+[shared message board](https://github.com/openai/codex/pull/48100) with
+channels, threads, and search that persist across sessions.
+
 **Execution settles what argument cannot.** Running two implementations on the
 same inputs exposes defects that reading misses (McKeeman, "Differential
 Testing for Software", _Digital Technical Journal_, 1998).
@@ -44,14 +52,26 @@ from the code catch more of its mistakes
 
 ## Protocol rules
 
-| Finding                            | Rule in Model Collab                                                                                                                                                                                    |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Influence erodes independence      | Each agent solves in its own Git worktree. Proposals stay sealed until both exist, as in a Delphi round.                                                                                                |
-| Models conform and flip            | The contract allows changing an answer only for a failing input, a test result, or a quoted requirement, never because a peer disagrees or sounds sure. An `accept` must cite the accepter's own check. |
-| Independent attempts fail together | Agents write tests from the specification before implementing, so tests encode the requirement rather than the code. The contract says agreement alone proves nothing.                                  |
-| Unique information goes unshared   | The contract asks each agent to report what its peer may not know: requirements found in the code, implied edge cases, traps.                                                                           |
-| Execution beats argument           | Cross-examination means running each agent's tests against the other's candidate in clean checkouts (`collab_checkout`) and checking where behavior differs.                                            |
-| Debate costs more than it returns  | Proposing counts as voting. One acceptance ends the session. Each agent gets one message per round, equal candidates break ties by ID, and rounds are capped.                                           |
+| Finding                            | Rule in Model Collab                                                                                                                                                                                                                     |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Influence erodes independence      | Each agent solves in its own Git worktree. Proposals stay sealed until both exist, as in a Delphi round.                                                                                                                                 |
+| Models conform and flip            | The contract allows changing an answer only for a failing input, a test result, or a quoted requirement, never because a peer disagrees or sounds sure. An `accept` must cite the accepter's own check.                                  |
+| Independent attempts fail together | Agents write tests from the specification before implementing, so tests encode the requirement rather than the code. The contract says agreement alone proves nothing.                                                                   |
+| Unique information goes unshared   | The contract asks each agent to report what its peer may not know: requirements found in the code, implied edge cases, traps.                                                                                                            |
+| Execution beats argument           | Cross-examination means running each agent's tests against the other's candidate in clean checkouts (`collab_checkout`) and checking where behavior differs.                                                                             |
+| Findings are lost between goals    | A project board keeps findings across goals, and the contract asks agents to search it before solving. Posts from earlier goals are leads to verify, not facts. Posts from the current goal stay sealed until both agents have proposed. |
+| Debate costs more than it returns  | Proposing counts as voting. One acceptance ends the session. Each agent gets one message per round, equal candidates break ties by ID, and rounds are capped.                                                                            |
+
+## Why the board is not a chat
+
+The board could easily become a second, unbounded conversation. Three rules
+prevent that. A post never counts as a vote, a challenge, or a round's message.
+It does not wake the other agent. And each agent may post twelve times per goal.
+Disagreements still go through the protocol, where they need evidence.
+
+Codex pushes new posts into a running turn. Model Collab cannot interrupt
+another client's turn, so new posts appear in status as `newForYou` at the start
+of each turn instead.
 
 ## Why no ping-pong
 

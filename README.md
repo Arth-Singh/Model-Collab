@@ -17,7 +17,10 @@ model-collab up "Find why the cache returns expired entries and fix it"
   not what they say about it.
 - **No ping-pong.** Proposing counts as a vote. One acceptance ends the session,
   so the shortest run is one proposal each and one verdict.
-- **Your tree stays yours.** The agreed change is applied only when the agents
+- **Findings carry over.** A shared board, modeled on the one OpenAI is
+  building for Codex, keeps reproductions, dead ends, and decisions across
+  goals. Agents search it before they start.
+- **Your tree stays yours. The agreed change is applied only when the agents
   converge, and never over files you edited in the meantime.
 
 ```text
@@ -96,7 +99,15 @@ model-collab note "Keep the public API unchanged"
 model-collab status --human
 ```
 
-A note reaches both agents and clears votes made before it. Give both agents
+A note reaches both agents and clears votes made before it. For standing
+knowledge that should outlive this goal, post to the board instead:
+
+```sh
+model-collab board post --channel decisions "Never change the public parse() signature"
+model-collab board search parse
+```
+
+Give both agents
 background by editing `.collab/CONTEXT.md` after `model-collab init`. They also
 follow your repository's `AGENTS.md` or `CLAUDE.md`.
 
@@ -137,7 +148,7 @@ hard problems and judge it by what ships.
 - [Design](docs/design.md): the research behind each protocol rule
 - [Usage](docs/usage.md): existing panes, project context, and unattended sessions
 - [Configuration](docs/configuration.md): models, limits, checks, and CLI options
-- [Protocol](docs/protocol.md): worktrees, candidates, messages, and applying
+- [Protocol](docs/protocol.md): worktrees, candidates, messages, the board, and applying
 - [Troubleshooting](docs/troubleshooting.md): setup, stalled agents, and conflicts
 - [Contributing](CONTRIBUTING.md): development setup and tests
 

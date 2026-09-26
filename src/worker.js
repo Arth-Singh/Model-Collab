@@ -50,9 +50,9 @@ function cleanMessage(value) {
 
 function phaseGuide(session, maxRounds) {
   if (session.phase === 'independent')
-    return 'Independent phase. Your workspace is a private copy of the project; your peer works in its own and neither can see the other. Pin down the contract, write tests from the specification, implement, and run the tests in your workspace. Return a proposal: the tool snapshots every file you changed, so put your design decisions in `solution` and what you ran in `evidence`.';
+    return "Independent phase. Your workspace is a private copy of the project; your peer works in its own and neither can see the other. Search the board for the goal's key terms, pin down the contract, write tests from the specification, implement, and run the tests in your workspace. Post findings a later session would need. Return a proposal: the tool snapshots every file you changed, so put your design decisions in `solution` and what you ran in `evidence`.";
   const last = session.round >= maxRounds;
-  return `Cross-examination, round ${session.round} of ${maxRounds}${last ? ' (final round: accept a candidate you verified, or record the unresolved alternatives and the check that would settle them)' : ''}. Every current candidate is visible. Read each with collab_diff, get a runnable copy with collab_checkout, and run your tests against your peer's candidate and your peer's tests against yours. Then send one verdict: accept the correct candidate, challenge one with a failing input, or propose a revision from your workspace that fixes a demonstrated defect.`;
+  return `Cross-examination, round ${session.round} of ${maxRounds}${last ? ' (final round: accept a candidate you verified, or record the unresolved alternatives and the check that would settle them)' : ''}. Every current candidate and your peer's board posts from this goal are visible; read board.newForYou first. Read each candidate with collab_diff, get a runnable copy with collab_checkout, and run your tests against your peer's candidate and your peer's tests against yours. Then send one verdict: accept the correct candidate, challenge one with a failing input, or propose a revision from your workspace that fixes a demonstrated defect.`;
 }
 
 async function sharedContext(root) {

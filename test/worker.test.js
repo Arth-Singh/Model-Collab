@@ -464,7 +464,7 @@ test('live README and JSONL track committed state and refresh repairs derived fi
 });
 
 test(
-  'worker MCP connections expose status, review and verification without posting or lifecycle tools',
+  'worker MCP connections expose status, review, verification and the board without posting or lifecycle tools',
   { timeout: 5000 },
   async (t) => {
     const { root } = await fixture(t);
@@ -478,6 +478,16 @@ test(
       }),
     );
     const tools = (await client.listTools()).tools.map((tool) => tool.name).sort();
-    assert.deepEqual(tools, ['collab_checkout', 'collab_diff', 'collab_status', 'collab_verify']);
+    assert.deepEqual(tools, [
+      'collab_board_post',
+      'collab_board_read_post',
+      'collab_board_read_thread',
+      'collab_board_search',
+      'collab_board_threads',
+      'collab_checkout',
+      'collab_diff',
+      'collab_status',
+      'collab_verify',
+    ]);
   },
 );

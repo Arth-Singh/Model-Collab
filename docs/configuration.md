@@ -116,22 +116,23 @@ shared with your working tree, not copied.
 
 ## Command reference
 
-| Command                    | Use                                                |
-| -------------------------- | -------------------------------------------------- |
-| `doctor`                   | Check installed tools without invoking models      |
-| `configure`                | Inspect or update settings for future goals        |
-| `up "goal"`                | Initialize and start both agents                   |
-| `attach`                   | Rejoin the project's native terminal session       |
-| `status --human`           | Read a session summary                             |
-| `diff --candidate mN`      | Show a candidate's changes                         |
-| `apply`                    | Apply the agreed candidate (or `--candidate mN`)   |
-| `pause`, `resume`, `stop`  | Control the current collaboration                  |
-| `note "instruction"`       | Send a shared user correction                      |
-| `init`                     | Prepare context and settings before starting       |
-| `start "goal"`             | Start the protocol with agents you launch yourself |
-| `launch --agent codex`     | Open one native interface in this pane             |
-| `worker --agent codex`     | Run one unattended peer                            |
-| `export --format markdown` | Export the conversation                            |
+| Command                      | Use                                                |
+| ---------------------------- | -------------------------------------------------- |
+| `doctor`                     | Check installed tools without invoking models      |
+| `configure`                  | Inspect or update settings for future goals        |
+| `up "goal"`                  | Initialize and start both agents                   |
+| `attach`                     | Rejoin the project's native terminal session       |
+| `status --human`             | Read a session summary                             |
+| `diff --candidate mN`        | Show a candidate's changes                         |
+| `apply`                      | Apply the agreed candidate (or `--candidate mN`)   |
+| `pause`, `resume`, `stop`    | Control the current collaboration                  |
+| `note "instruction"`         | Send a shared user correction                      |
+| `board search`, `board post` | Read or add to the project board                   |
+| `init`                       | Prepare context and settings before starting       |
+| `start "goal"`               | Start the protocol with agents you launch yourself |
+| `launch --agent codex`       | Open one native interface in this pane             |
+| `worker --agent codex`       | Run one unattended peer                            |
+| `export --format markdown`   | Export the conversation                            |
 
 All project commands accept `--repo /path/to/project`. Run any command with
 `--help` for its options.

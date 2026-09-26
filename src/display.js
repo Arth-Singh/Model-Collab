@@ -44,6 +44,10 @@ export function renderStatus(state) {
   ];
   if (session.stopReason) lines.push(`Reason: ${session.stopReason}`);
   if (session.winner || session.status === 'converged') lines.push(renderApplied(session));
+  if (state.board?.posts)
+    lines.push(
+      `Board: ${state.board.posts} posts in ${state.board.channels.map((c) => c.name).join(', ')}`,
+    );
   const recent = session.messages.slice(-4);
   if (recent.length)
     lines.push(
@@ -65,4 +69,26 @@ export function renderWorkerEvent(event) {
   if (event.event === 'cancelled')
     return `[${event.agent}] Stopped its turn early; the session is ${event.reason}.`;
   return null;
+}
+
+const postLine = (post) =>
+  `${post.id} · #${post.channel} · ${post.author} · ${post.createdAt}${post.thread !== post.id ? ` · reply in ${post.thread}` : ''}\n  ${post.text.replaceAll('\n', '\n  ')}${post.truncated ? ' [...]' : ''}`;
+
+export function renderBoardPosts({ results, hasMore, nextCursor }) {
+  if (!results.length) return 'No posts.';
+  return [
+    ...results.map(postLine),
+    ...(hasMore ? [`More results: --cursor ${nextCursor}`] : []),
+  ].join('\n\n');
+}
+
+export function renderBoardThreads({ results, hasMore, nextCursor }) {
+  if (!results.length) return 'No threads.';
+  return [
+    ...results.map(
+      (t) =>
+        `${postLine(t.root)}\n  ${t.replies} ${t.replies === 1 ? 'reply' : 'replies'}, last activity ${t.lastActivityAt}`,
+    ),
+    ...(hasMore ? [`More threads: --cursor ${nextCursor}`] : []),
+  ].join('\n\n');
 }
