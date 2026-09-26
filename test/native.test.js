@@ -14,6 +14,16 @@ test('native processes enforce timeout, output cap, and missing executable failu
   );
   assert.equal(output.error, 'output_limit');
   assert.ok(output.stdout.length <= 100);
+  const tail = await runProcess(
+    process.execPath,
+    ['-e', 'process.stdout.write("a".repeat(5000) + "END")'],
+    { tailBytes: 100, maxOutputBytes: 1_000_000, timeoutMs: 1000 },
+  );
+  assert.equal(tail.error, null);
+  assert.equal(tail.code, 0);
+  assert.equal(tail.stdout.length, 100);
+  assert.ok(tail.stdout.endsWith('END'));
+  assert.equal(tail.truncated, true);
   const missing = await runProcess('/no/such/model-collab-command', [], { timeoutMs: 1000 });
   assert.match(missing.error, /^spawn_error:/);
   const deadline = await runProcess(process.execPath, ['-e', 'process.exit(1)'], {

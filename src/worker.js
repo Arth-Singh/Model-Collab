@@ -179,7 +179,12 @@ SHARED CONTEXT\n${context || '(none)'}\n\nFILTERED SESSION\n${JSON.stringify(sta
     input: prompt,
     timeoutMs,
     deadlineMs: Date.parse(state.session.deadlineAt),
-    maxOutputBytes: 1000000,
+    // Codex returns its message through --output-last-message; its --json event
+    // stream is only a log and grows with every command it runs, so keep a tail.
+    // Claude's stdout is the result itself.
+    ...(agent === 'codex'
+      ? { tailBytes: 1_000_000, maxOutputBytes: 256_000_000 }
+      : { maxOutputBytes: 1_000_000 }),
     signal,
   });
   await fs.writeFile(

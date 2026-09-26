@@ -6,7 +6,12 @@ export const DEFAULT_MODELS = Object.freeze({
 });
 export const DEFAULT_EFFORT = 'high';
 
-/** Run without a shell. Bound output and terminate the whole POSIX process group. */
+/**
+ * Run without a shell. Bound output and terminate the whole POSIX process group.
+ * With `tailBytes`, keep only the last `tailBytes` of each stream and stop the
+ * process only when total output exceeds `maxOutputBytes`; use it when the
+ * result arrives another way and the stream is only a log.
+ */
 export function runProcess(command, args = [], options = {}) {
   const {
     cwd,
@@ -14,6 +19,7 @@ export function runProcess(command, args = [], options = {}) {
     timeoutMs = 60_000,
     deadlineMs = Date.now() + timeoutMs,
     maxOutputBytes = 1_000_000,
+    tailBytes = null,
     env = process.env,
     signal,
     onLaunch,
@@ -30,12 +36,14 @@ export function runProcess(command, args = [], options = {}) {
       error: signal?.aborted ? 'aborted' : 'deadline_exceeded',
       wallMs: 0,
       launched: false,
+      truncated: false,
     });
   return new Promise((resolve) => {
     const started = Date.now();
     let stdout = '',
       stderr = '',
       bytes = 0,
+      truncated = false,
       failure = null,
       settled = false,
       killTimer,
@@ -86,14 +94,25 @@ export function runProcess(command, args = [], options = {}) {
         error: failure,
         wallMs: Date.now() - started,
         launched,
+        truncated,
       });
     };
     const collect = (name) => (chunk) => {
-      const available = Math.max(0, maxOutputBytes - bytes);
       bytes += chunk.length;
-      const text = chunk.subarray(0, available).toString('utf8');
-      if (name === 'stdout') stdout += text;
-      else stderr += text;
+      if (tailBytes) {
+        let text = (name === 'stdout' ? stdout : stderr) + chunk.toString('utf8');
+        if (text.length > tailBytes) {
+          text = text.slice(-tailBytes);
+          truncated = true;
+        }
+        if (name === 'stdout') stdout = text;
+        else stderr = text;
+      } else {
+        const available = Math.max(0, maxOutputBytes - (bytes - chunk.length));
+        const text = chunk.subarray(0, available).toString('utf8');
+        if (name === 'stdout') stdout += text;
+        else stderr += text;
+      }
       if (bytes > maxOutputBytes) stop('output_limit');
     };
     child.stdout.on('data', collect('stdout'));
