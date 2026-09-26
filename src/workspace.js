@@ -32,6 +32,15 @@ const ARTIFACT_DIRS = new Set([
   '.gocache',
 ]);
 const ARTIFACT_FILES = /(^|\/)\.DS_Store$|\.py[co]$/;
+// Untracked caches the base snapshot leaves out, so a stale cache in the user's
+// tree never becomes a tracked file that every test run then "modifies".
+const CACHE_EXCLUDES = [
+  ...['__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache', '.gocache'].map(
+    (dir) => `:(top,exclude,glob)**/${dir}/**`,
+  ),
+  ':(top,exclude,glob)**/*.py[co]',
+  ':(top,exclude,glob)**/.DS_Store',
+];
 const isArtifact = (file) =>
   ARTIFACT_FILES.test(file) ||
   file
@@ -101,12 +110,20 @@ export async function captureBase(root, tmpDir, dependencyDirs = []) {
     await git(top, parent ? ['read-tree', parent] : ['read-tree', '--empty'], { env });
     // .collab is normally ignored. Naming an ignored path in a pathspec is an
     // error, so exclude it explicitly only when the project does not ignore it.
+    // Glob excludes do not have that problem.
     const ignored = await git(top, ['check-ignore', '-q', `${prefix}.collab/`], {
       allowFailure: true,
     });
     await git(
       top,
-      ['add', '-A', ...(ignored.code === 0 ? [] : ['--', '.', `:(top,exclude)${prefix}.collab`])],
+      [
+        'add',
+        '-A',
+        '--',
+        '.',
+        ...CACHE_EXCLUDES,
+        ...(ignored.code === 0 ? [] : [`:(top,exclude)${prefix}.collab`]),
+      ],
       { env },
     );
     const tree = text(await git(top, ['write-tree'], { env }));

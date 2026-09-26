@@ -157,6 +157,37 @@ test('proposals snapshot changed files; dependency links and .collab are never c
   assert.equal(await fs.readFile(path.join(root, 'src/a.js'), 'utf8'), 'old\n');
 });
 
+test('the tie-break lets each peer accept the smaller ID, including its own', async (t) => {
+  const { collab } = await fixture(t);
+  const [first] = await independent(collab);
+  const own = await collab.post('codex', message('accept', { candidate: first }));
+  assert.equal(own.status, 'active');
+  const agreed = await collab.post('claude', message('accept', { candidate: first }));
+  assert.equal(agreed.status, 'converged');
+  assert.equal(agreed.winner, first);
+});
+
+test('untracked caches in the user tree stay out of the base and every candidate', async (t) => {
+  const root = await gitProject(t, 'model-collab-cache-', { 'src/m.py': 'x = 1\n' });
+  await fs.mkdir(path.join(root, 'src/__pycache__'));
+  await fs.writeFile(path.join(root, 'src/__pycache__/m.cpython-313.pyc'), 'stale');
+  await fs.writeFile(path.join(root, 'top.pyc'), 'stale');
+  const collab = new Collaboration(root);
+  await collab.init();
+  await collab.start({ topic: 'Change m.' });
+  const ws = await workspace(collab, 'codex');
+  await assert.rejects(fs.access(path.join(ws, 'src/__pycache__')));
+  await fs.writeFile(path.join(ws, 'src/m.py'), 'x = 2\n');
+  await fs.mkdir(path.join(ws, 'src/__pycache__'));
+  await fs.writeFile(path.join(ws, 'src/__pycache__/m.cpython-313.pyc'), 'fresh');
+  await fs.writeFile(path.join(ws, 'top.pyc'), 'fresh');
+  await collab.post('codex', message('proposal'));
+  assert.deepEqual(
+    (await collab.status('codex')).session.candidates[0].changes.map((c) => [c.path, c.status]),
+    [['src/m.py', 'modified']],
+  );
+});
+
 test('independent proposals remain sealed until every peer submits; each peer gets one contribution per round', async (t) => {
   const { collab } = await fixture(t);
   await assert.rejects(collab.post('codex', message('evidence')), /independent proposal/);
