@@ -198,7 +198,9 @@ corrected message before giving up. A note you add during a turn discards that
 turn's output and the agent starts again with your note.
 
 Workers run noninteractively inside each client's sandbox, in the agent's
-worktree. Codex uses `workspace-write`. Claude Code runs shell commands in its OS
+worktree. Codex uses `workspace-write` and ignores your Codex `config.toml` and
+execpolicy `.rules`, so a rule that lets `curl` or `git push` skip the sandbox in
+your own sessions does not apply to a worker. Claude Code runs shell commands in its OS
 sandbox, which limits writes to the worktree and temporary directories and blocks
 network access. Neither agent can search the web in worker mode. Both
 agents can edit files and run local tests; commands that need the network or

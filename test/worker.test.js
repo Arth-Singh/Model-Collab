@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { Collaboration } from '../src/core.js';
-import { runWorker } from '../src/worker.js';
+import { nativeTurn, runWorker } from '../src/worker.js';
 import { runProcess } from '../src/native.js';
 import { gitProject } from './helpers.js';
 
@@ -491,3 +491,41 @@ test(
     ]);
   },
 );
+
+test('an unattended Codex turn ignores the user config and execpolicy rules', async (t) => {
+  const { root, collab } = await fixture(t);
+  const bin = await fs.mkdtemp(path.join(os.tmpdir(), 'model-collab-fake-codex-'));
+  t.after(() => fs.rm(bin, { recursive: true, force: true }));
+  const argvFile = path.join(bin, 'argv.json');
+  // A stand-in codex that records its arguments and answers with a proposal.
+  await fs.writeFile(
+    path.join(bin, 'codex'),
+    `#!${process.execPath}
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+fs.writeFileSync(${JSON.stringify(argvFile)}, JSON.stringify(args));
+fs.writeFileSync(args[args.indexOf('--output-last-message') + 1], ${JSON.stringify(JSON.stringify(proposal()))});
+`,
+    { mode: 0o755 },
+  );
+  const previous = process.env.PATH;
+  process.env.PATH = `${bin}${path.delimiter}${previous}`;
+  t.after(() => {
+    process.env.PATH = previous;
+  });
+  const logDir = path.join(root, '.collab', 'workers', 'codex');
+  await fs.mkdir(logDir, { recursive: true });
+  const message = await nativeTurn({
+    root,
+    agent: 'codex',
+    state: await collab.status('codex'),
+    timeoutMs: 10000,
+    logDir,
+  });
+  assert.equal(message.kind, 'proposal');
+  const argv = JSON.parse(await fs.readFile(argvFile, 'utf8'));
+  for (const flag of ['--ignore-user-config', '--ignore-rules', '--ephemeral'])
+    assert.ok(argv.includes(flag), `missing ${flag}`);
+  assert.equal(argv[argv.indexOf('--sandbox') + 1], 'workspace-write');
+  assert.ok(argv.includes('web_search="disabled"'));
+});

@@ -107,6 +107,9 @@ SHARED CONTEXT\n${context || '(none)'}\n\nFILTERED SESSION\n${JSON.stringify(sta
       ? [
           'exec',
           '--ignore-user-config',
+          // The user's execpolicy rules can allow commands such as curl or git push
+          // to run outside the sandbox; an unattended peer must not inherit them.
+          '--ignore-rules',
           '--ephemeral',
           '--skip-git-repo-check',
           '--sandbox',

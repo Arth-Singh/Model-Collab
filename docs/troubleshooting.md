@@ -89,6 +89,11 @@ model-collab configure --minutes 45 --max-rounds 6
 The next goal will use those settings. Use `configure --json` to inspect the
 complete saved configuration.
 
+## A Codex worker exits immediately
+
+If the worker log shows `unexpected argument '--ignore-rules'`, your Codex CLI is
+too old for unattended workers. Update it and run `model-collab doctor`.
+
 ## A check failed
 
 A check runs in a fresh copy of the project with the candidate's changes, using
