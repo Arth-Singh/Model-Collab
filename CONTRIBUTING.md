@@ -2,7 +2,7 @@
 
 ## Development setup
 
-Use Node.js 22.12 or later. tmux is needed for the terminal integration test.
+Use Node.js 22.12 or later and Git. tmux is needed for the terminal integration test.
 
 ```sh
 npm ci
@@ -20,11 +20,12 @@ Run `npm run format` to apply the repository's formatting conventions.
 ## Project structure
 
 - `bin/` contains the CLI.
-- `src/core.js` owns state transitions, file claims, and verification.
+- `src/core.js` owns state transitions, votes, verification, and applying.
+- `src/workspace.js` creates worktrees, snapshots candidates, and builds checkouts.
 - `src/up.js`, `src/setup.js`, and `src/control.js` manage native terminal sessions.
 - `src/worker.js` runs unattended turns.
 - `src/server.js` exposes the MCP interface.
-- `prompts/` contains the peer instructions.
+- `prompts/` contains the peer instructions; `docs/design.md` explains them.
 - `schemas/` documents configuration and message formats.
 - `test/` covers the protocol and integrations with fixture processes.
 

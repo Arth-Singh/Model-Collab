@@ -30,14 +30,16 @@ experiment-planning instructions, plus `.collab/RESEARCH.md`.
 | Setting           | Default    |
 | ----------------- | ---------- |
 | Preset            | coding     |
-| Discussion rounds | 4          |
+| Discussion rounds | 3          |
 | Contributions     | 24         |
 | Conversation time | 30 minutes |
 | Check timeout     | 300 s      |
 | Worker turn limit | 900 s      |
 
 The independent proposal phase precedes discussion rounds. Each peer gets one
-contribution per round. The first limit reached ends the conversation without
+contribution per round. With two agents, one acceptance of the other's proposal
+ends the session, so most agreeable sessions finish in the first discussion
+round. The first limit reached ends the conversation without
 inventing agreement. Native interfaces remain open; protocol limits do not kill
 an agent that is already working.
 
@@ -83,9 +85,11 @@ Or load a JSON file:
 model-collab init --checks @checks.json
 ```
 
-The agents must run all configured checks before accepting a proposal. Checks
-run in the project directory without a shell, so shell operators such as `&&`
-are not interpreted. Put complex checks in a script and invoke that script.
+The agents must run all configured checks before accepting a proposal. Each
+check runs without a shell in a fresh copy of the project with the candidate's
+changes, so shell operators such as `&&` are not interpreted. Put complex checks
+in a script and invoke that script. Ignored dependency directories such as
+`node_modules` or `.venv` are linked into that copy.
 
 Each check run may take up to 300 seconds, bounded by the session deadline. Set
 `--check-timeout SECONDS` (at most 3600) with `init`, `up` for a new project, or
@@ -101,6 +105,8 @@ Each check run may take up to 300 seconds, bounded by the session deadline. Set
 | `up "goal"`                | Initialize and start both agents                   |
 | `attach`                   | Rejoin the project's native terminal session       |
 | `status --human`           | Read a session summary                             |
+| `diff --candidate mN`      | Show a candidate's changes                         |
+| `apply`                    | Apply the agreed candidate (or `--candidate mN`)   |
 | `pause`, `resume`, `stop`  | Control the current collaboration                  |
 | `note "instruction"`       | Send a shared user correction                      |
 | `init`                     | Prepare context and settings before starting       |
@@ -119,6 +125,6 @@ agents. `doctor --json` and `attach --print` support automation.
 Project setup and control commands (`init`, `start`, `configure`, `pause`,
 `note`, `resume`, and `stop`) also accept `--json`.
 
-Advanced integration commands (`serve`, `config`, `post`, `claim`, `release`,
+Advanced integration commands (`serve`, `config`, `post`, `checkout`,
 `verify`, `wait`, `await-turn`, and `refresh`) are covered in the
 [protocol reference](protocol.md).

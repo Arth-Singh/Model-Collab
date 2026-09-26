@@ -1,7 +1,8 @@
 # Usage
 
-Run commands from the project you want to work on, or pass `--repo /path/to/project`.
-Each project has its own goal, conversation, and terminal session.
+Run commands from the Git repository you want to work on, or pass
+`--repo /path/to/project`. Each project has its own goal, conversation, and
+terminal session.
 
 ## Start and return to a session
 
@@ -9,8 +10,8 @@ Each project has its own goal, conversation, and terminal session.
 model-collab up "Fix the stale cache entries"
 ```
 
-`up` initializes a new project, starts the goal, and opens both native agent
-interfaces. In an ordinary interactive shell it attaches automatically. With
+`up` initializes a new project, snapshots it, gives each agent its own worktree
+under `.collab/work/`, and opens both native agent interfaces in those worktrees. In an ordinary interactive shell it attaches automatically. With
 `--detach`, or when run through an agent's shell tool, it prints instructions for
 attaching from your terminal.
 
@@ -27,8 +28,28 @@ model-collab up "Review the retry policy"
 ```
 
 Completed conversations are retained under `.collab/history/` when the next goal
-starts. Detaching from tmux leaves the current session running. `stop` ends the
-collaboration protocol; the native interfaces remain available for inspection.
+starts, and the worktrees are replaced. Detaching from tmux leaves the current
+session running. `stop` ends the collaboration protocol; the native interfaces
+and worktrees remain available for inspection.
+
+## Review and apply the result
+
+When the agents converge, the agreed candidate is written to your working tree.
+Review it with `git diff` and commit it yourself. If you edited any of the same
+files after the session started, nothing is written; the transcript says which
+files conflict. Restore or commit your edits, then run:
+
+```sh
+model-collab apply
+```
+
+When a session ends without agreement, both alternatives stay available. Inspect
+them and apply the one you prefer:
+
+```sh
+model-collab diff --agent codex --candidate m2
+model-collab apply --candidate m2
+```
 
 ## Prepare shared context
 
@@ -82,7 +103,9 @@ Read /path/to/project/.collab/START-CODEX.md and follow it here. Work on the act
 ```
 
 The generated instructions use each agent's shell tools to exchange messages.
-No MCP reconfiguration is required for this workflow. The agents wait locally
+No MCP reconfiguration is required for this workflow. `status` names each
+agent's worktree; the instructions tell the agent to make its changes there, not
+in the directory it was opened in. The agents wait locally
 between turns; after five minutes without an actionable update, they may return
 to their prompts. Say "continue collaboration" to restart an idle agent.
 
@@ -133,7 +156,9 @@ model-collab up "Review the error handling in this module" --ui workers
 
 Workers print contributions to the current terminal and start a CLI turn only
 when a peer can contribute. They wait locally between turns and stop on agreement,
-a limit, a blocker, or a transport error. Ctrl-C cancels the worker processes.
+a limit, a blocker, or a transport error. When one agent's acceptance ends the
+session, the other agent's turn in progress is cancelled. Ctrl-C cancels the
+worker processes.
 
 Each model turn may take up to 15 minutes by default; change this with
 `--turn-timeout SECONDS`. If the protocol rejects a message, for example an
@@ -141,9 +166,10 @@ acceptance while a challenge is still open, the worker asks that agent for one
 corrected message before giving up. A note you add during a turn discards that
 turn's output and the agent starts again with your note.
 
-Workers run noninteractively inside each client's sandbox. Codex uses
-`workspace-write`. Claude Code runs shell commands in its OS sandbox, which limits
-writes to the project and temporary directories and blocks network access. Both
+Workers run noninteractively inside each client's sandbox, in the agent's
+worktree. Codex uses `workspace-write`. Claude Code runs shell commands in its OS
+sandbox, which limits writes to the worktree and temporary directories and blocks
+network access. Both
 agents can edit files and run local tests; commands that need the network or
 paths outside the project will fail. Toolchains that write caches under your
 home directory need a cache inside the project; for Go, start workers with

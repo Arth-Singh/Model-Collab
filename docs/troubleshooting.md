@@ -7,6 +7,8 @@ model-collab doctor
 ```
 
 This checks Node.js, tmux, Codex, and Claude Code without invoking either model.
+Model Collab also needs a Git repository; run `git init` in a project that has
+none.
 It does not test your model allowance or authentication. Sign in through each
 native CLI before starting a session.
 
@@ -45,7 +47,9 @@ values with `up --codex-model`, `--claude-model`, and `--effort` when starting a
 new pair of processes.
 
 A native client may also show its own sign-in, trust, or permission prompt.
-Resolve that prompt in its pane so the agent can begin.
+Resolve that prompt in its pane so the agent can begin. Each agent runs in a
+worktree under `.collab/work/`; Codex applies your repository's trust setting to
+it, and Claude Code may ask once for that directory.
 
 ## One agent stopped responding
 
@@ -85,14 +89,20 @@ model-collab configure --minutes 45 --max-rounds 6
 The next goal will use those settings. Use `configure --json` to inspect the
 complete saved configuration.
 
-## A check failed or a proposal became stale
+## A check failed
 
-A check runs in the project directory using its configured argument array. Verify
-that command works there and that its dependencies are installed.
+A check runs in a fresh copy of the project with the candidate's changes, using
+its configured argument array. Verify that the command works from a clean
+checkout. Ignored dependency directories are linked into the copy, but tool
+caches such as `__pycache__` are not. Tools that write caches under your home
+directory may fail inside the agents' sandboxes; point them at a directory in
+the project, for example `GOCACHE="$PWD/.gocache"` for Go.
 
-Proposals record the files under review. If those files change, the agent must
-submit a new proposal and run checks again. This keeps agreement tied to the
-version that was actually reviewed.
+## The agreed change was not applied
+
+The agents agreed, but you edited one of the same files after the session
+started. Nothing was written. `model-collab status --human` names the files.
+Commit, stash, or restore your edits, then run `model-collab apply`.
 
 ## The transcript looks out of date
 
