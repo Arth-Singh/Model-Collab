@@ -9,6 +9,7 @@ import { binPath, writeInstructions } from './setup.js';
 import { runCommand } from './process.js';
 import { runWorker, DEFAULT_TURN_TIMEOUT_MS } from './worker.js';
 import { repoInfo } from './workspace.js';
+import { pendingGoals, updateMemory } from './memory.js';
 import { DEFAULT_EFFORT, DEFAULT_MODELS } from './native.js';
 
 const SOCKET = 'model-collab';
@@ -29,6 +30,7 @@ export async function planUp({
   maxRounds = 3,
   maxMessages = 24,
   checkTimeoutSeconds,
+  memory,
   criteria = [],
 } = {}) {
   root = await fs.realpath(root);
@@ -51,6 +53,7 @@ export async function planUp({
         maxRounds,
         maxMessages,
         checkTimeoutSeconds,
+        memory,
         checks: checks ?? {},
       });
   if (preset && config.preset !== preset)
@@ -233,7 +236,12 @@ export async function up(options = {}) {
     if (!plan.initialized) await collab.init(plan.config);
     await writeInstructions(plan.root, plan.config.participants, { preset: plan.config.preset });
     let state = await collab.status();
-    if (!openSession(state.session)) state = await collab.start(plan.task);
+    if (!openSession(state.session)) {
+      // Fold earlier finished goals (for example from tmux sessions) into memory
+      // before the agents read it.
+      await rememberGoals(plan, options, 'before');
+      state = await collab.start(plan.task);
+    }
     if (state.session.status === 'paused') {
       if (!options.resume)
         return {
@@ -316,6 +324,7 @@ export async function up(options = {}) {
         reason: final.stopReason,
         winner: final.winner,
         applied: final.applied,
+        memory: await rememberGoals(plan, options, 'after'),
       };
     } finally {
       controller.abort();
@@ -324,6 +333,29 @@ export async function up(options = {}) {
     }
   }
   return result;
+}
+
+/**
+ * Update project memory with one Claude call per finished goal. A failure is
+ * reported, never fatal: the goal's result matters more than its memory.
+ */
+async function rememberGoals(plan, options, when) {
+  if (!plan.config.memory || !(await pendingGoals(plan.root)).length) return null;
+  options.onEvent?.({ event: 'memory', status: 'updating', when });
+  try {
+    const result = await updateMemory(plan.root, {
+      agent: 'claude',
+      model: plan.models.claude,
+      effort: 'low',
+      signal: options.signal,
+      call: options.memoryCall,
+    });
+    options.onEvent?.({ event: 'memory', status: 'updated', changed: result.changed, when });
+    return result;
+  } catch (error) {
+    options.onEvent?.({ event: 'memory', status: 'failed', error: error.message, when });
+    return { error: error.message };
+  }
 }
 
 export async function attachTerminal(result) {

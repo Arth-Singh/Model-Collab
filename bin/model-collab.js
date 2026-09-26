@@ -32,6 +32,10 @@ const list = (value) =>
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
+function onOff(value) {
+  if (!['on', 'off'].includes(value)) throw new Error('Use on or off.');
+  return value === 'on';
+}
 async function textInput(value) {
   if (value === '-') {
     let text = '';
@@ -66,6 +70,7 @@ withRepo(
   .option('--max-messages <n>', 'New-project message cap', Number, 24)
   .option('--checks <json>', 'New-project named checks as argv arrays, or @file')
   .option('--check-timeout <seconds>', 'New-project timeout for each check run', Number)
+  .option('--no-memory', 'New project: do not keep project memory across goals')
   .option('--criteria <text...>', 'Success criteria')
   .option('--effort <level>', 'Reasoning effort', DEFAULT_EFFORT)
   .option('--turn-timeout <seconds>', 'Workers: time limit for one model turn', Number, 900)
@@ -90,6 +95,7 @@ withRepo(
         maxMessages: opts.maxMessages,
         checks: opts.checks ? await jsonInput(opts.checks) : undefined,
         checkTimeoutSeconds: opts.checkTimeout,
+        memory: opts.memory,
         criteria: opts.criteria,
         effort: opts.effort,
         timeoutMs: opts.turnTimeout * 1000,
@@ -139,6 +145,7 @@ withRepo(
     'Comma-separated ignored directories to link into worktrees',
     list,
   )
+  .option('--memory <on|off>', 'Keep project memory across goals', onOff)
   .option('--checks <json>', 'Named verification commands as JSON, or @file')
   .option('--json', 'Print the saved configuration as JSON')
   .action(async (opts) => {
@@ -150,6 +157,7 @@ withRepo(
         maxMessages: opts.maxMessages,
         checkTimeoutSeconds: opts.checkTimeout,
         dependencyDirs: opts.dependencyDirs,
+        memory: opts.memory,
         checks: opts.checks === undefined ? undefined : await jsonInput(opts.checks),
       }).filter(([, value]) => value !== undefined),
     );
@@ -165,7 +173,7 @@ withRepo(
     output(
       opts.json
         ? config
-        : `Project settings\nPreset: ${config.preset}\nLimits: ${config.maxRounds} rounds, ${config.maxMessages} contributions, ${config.deadlineMinutes} minutes\nChecks: ${Object.keys(config.checks).join(', ') || 'none'} (timeout ${config.checkTimeoutSeconds} seconds)\nLinked dependency directories: ${config.dependencyDirs.join(', ') || 'none'}\nThese settings apply to new goals.`,
+        : `Project settings\nPreset: ${config.preset}\nLimits: ${config.maxRounds} rounds, ${config.maxMessages} contributions, ${config.deadlineMinutes} minutes\nChecks: ${Object.keys(config.checks).join(', ') || 'none'} (timeout ${config.checkTimeoutSeconds} seconds)\nLinked dependency directories: ${config.dependencyDirs.join(', ') || 'none'}\nProject memory: ${config.memory ? 'on' : 'off'}\nThese settings apply to new goals.`,
     );
   });
 
@@ -200,6 +208,7 @@ withRepo(
     'Comma-separated ignored directories to link into worktrees',
     list,
   )
+  .option('--no-memory', 'Do not keep project memory across goals')
   .option('--checks <json>', 'JSON object of check names to argv arrays, or @file', '{}')
   .option('--json', 'Print initialized project settings as JSON')
   .action(async (opts) => {
@@ -211,6 +220,7 @@ withRepo(
       deadlineMinutes: opts.minutes,
       checkTimeoutSeconds: opts.checkTimeout,
       dependencyDirs: opts.dependencyDirs,
+      memory: opts.memory,
       checks: await jsonInput(opts.checks),
     });
     await writeInstructions(path.resolve(opts.repo), state.config.participants, {
@@ -424,6 +434,55 @@ viewerOption(
         ...(thread?.replies.results.length ? [renderBoardPosts(thread.replies)] : []),
       ].join('\n\n'),
     );
+});
+
+const memory = program
+  .command('memory')
+  .description('Show, update, or clear the project memory that carries over between goals.');
+withRepo(memory.command('show').description('Print .collab/MEMORY.md.')).action(async (opts) => {
+  const file = path.join(path.resolve(opts.repo), '.collab', 'MEMORY.md');
+  const text = await fs.readFile(file, 'utf8').catch((error) => {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  });
+  output(text ?? 'No project memory yet. It is written when a goal ends.');
+});
+withRepo(
+  memory
+    .command('update')
+    .description('Fold finished goals into project memory now, with one model call per goal.'),
+)
+  .option('--agent <id>', 'codex or claude', 'claude')
+  .option('--model <model>', 'Model for the update')
+  .option('--effort <level>', 'Reasoning effort', 'low')
+  .option('--json', 'Print JSON')
+  .action(async (opts) => {
+    if (!['codex', 'claude'].includes(opts.agent))
+      throw new Error('Agent must be codex or claude.');
+    const { updateMemory } = await import('../src/memory.js');
+    const result = await updateMemory(path.resolve(opts.repo), {
+      agent: opts.agent,
+      model: opts.model ?? DEFAULT_MODELS[opts.agent],
+      effort: opts.effort,
+    });
+    output(
+      opts.json
+        ? result
+        : result.disabled
+          ? 'Project memory is off. Turn it on with model-collab configure --memory on.'
+          : result.consolidated.length
+            ? `Remembered ${result.consolidated.length} goal(s)${result.changed ? '; .collab/MEMORY.md changed' : '; nothing durable to add'}.`
+            : 'No finished goals to remember.',
+    );
+  });
+withRepo(
+  memory
+    .command('clear')
+    .description('Delete the project memory. Goal history and the board are kept.'),
+).action(async (opts) => {
+  const { clearMemory } = await import('../src/memory.js');
+  await clearMemory(path.resolve(opts.repo));
+  output('Project memory cleared.');
 });
 
 withRepo(program.command('export'))

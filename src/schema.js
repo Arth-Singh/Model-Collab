@@ -16,6 +16,8 @@ export const configSchema = z
     maxMessages: z.number().int().min(4).max(100).default(24),
     deadlineMinutes: z.number().min(0.01).max(240).default(30),
     checkTimeoutSeconds: z.number().int().min(1).max(3600).default(300),
+    // Fold each finished goal into .collab/MEMORY.md with one model call.
+    memory: z.boolean().default(true),
     // Ignored directories, by name, that worktrees and checkouts link to.
     dependencyDirs: z
       .array(

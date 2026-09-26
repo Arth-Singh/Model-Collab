@@ -53,7 +53,7 @@ const postReceipt = ({ id, channel, thread, author, createdAt }) => ({
   createdAt,
 });
 
-async function atomicWrite(file, content) {
+export async function atomicWrite(file, content) {
   const temp = `${file}.${randomUUID()}.tmp`;
   let handle;
   try {
@@ -288,6 +288,7 @@ export class Collaboration {
       'deadlineMinutes',
       'checkTimeoutSeconds',
       'dependencyDirs',
+      'memory',
       'checks',
     ]);
     if (Object.keys(changes).some((key) => !allowed.has(key))) fail('Unsupported project setting.');

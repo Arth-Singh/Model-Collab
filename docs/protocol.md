@@ -137,6 +137,33 @@ is its first post's ID.
 The user posts as `user` with `model-collab board post`. Unlike a note, a board
 post does not clear votes or change `contextVersion`.
 
+## Project memory
+
+`.collab/MEMORY.md` summarizes earlier goals in at most 10,000 bytes, under the
+headings User preferences, Project knowledge, Pitfalls, and Goal history. Workers
+receive it with the shared context; interactive agents are told to read it.
+
+When a goal ends, one model call without tools reads the current memory and the
+goal's record: its goal and success criteria, outcome and applied change, user
+notes, messages with evidence, checks, and the board posts made during it. It
+returns the complete new memory, or the same memory when nothing durable was
+learned. The tool then:
+
+1. redacts common secret formats,
+2. rejects output that lacks the headings in order or exceeds the size limit,
+3. keeps the file unchanged if the user edited it during the call, leaving the
+   goal to the next update, and
+4. records the goal in `.collab/memory.json` so it is remembered only once.
+
+If the user edited `MEMORY.md` since the last update, the call receives a diff of
+those edits and must keep them. An update handles at most three goals; older
+unremembered goals are marked skipped.
+
+`up --ui workers` updates memory when the session ends. Other sessions are
+remembered by the next `up`, before the new goal starts, or by
+`model-collab memory update`. A failed update is reported and never blocks a
+goal.
+
 ## Checks and applying
 
 Checks are user-configured argument arrays. Each run uses a fresh copy of the

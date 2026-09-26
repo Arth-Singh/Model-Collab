@@ -48,6 +48,21 @@ Post as yourself with `model-collab board post --channel decisions "..."`, or
 reply to a thread with `--thread p12`. `.collab/BOARD.md` shows the whole board.
 To start fresh, delete `.collab/board.jsonl` between goals.
 
+## Project memory
+
+When a goal ends, Model Collab condenses it into `.collab/MEMORY.md`: what you
+asked for and corrected, how to build and test, traps, and what was decided.
+Both agents read it before the next goal. It is short by design and grounded in
+the goal record, and the agents are told to verify it rather than trust it.
+
+```sh
+model-collab memory show
+```
+
+Edit the file to correct it; your edits survive later updates. See
+[configuration](configuration.md#project-memory) to update, clear, or turn it
+off.
+
 ## Review and apply the result
 
 When the agents converge, the agreed candidate is written to your working tree.

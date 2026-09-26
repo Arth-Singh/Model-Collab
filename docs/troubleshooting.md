@@ -107,6 +107,14 @@ started, or a write failed. Nothing was written; a partial write is rolled
 back. `model-collab status --human` names the file or the error. Commit, stash,
 or restore your edits, then run `model-collab apply`.
 
+## Project memory was not updated
+
+The goal itself is unaffected. The message names the cause: usually the Claude
+CLI was unavailable or returned malformed memory. Retry with
+`model-collab memory update`, or use Codex with `--agent codex`. If you edited
+`MEMORY.md` while an update was running, the update left your version in place;
+run it again.
+
 ## The transcript looks out of date
 
 Regenerate the readable transcript from saved state:

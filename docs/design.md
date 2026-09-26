@@ -38,9 +38,14 @@ information and underuse facts that only one member holds
 rely on shared records and on knowing who knows what (Wegner, "Transactive
 Memory: A Contemporary Analysis of the Group Mind", in _Theories of Group
 Behavior_, 1987). Agents get neither by default, and each session starts with
-no memory of the last. OpenAI's Codex gives its agents a
+no memory of the last. OpenAI's Codex addresses this twice: a
 [shared message board](https://github.com/openai/codex/pull/48100) with
-channels, threads, and search that persist across sessions.
+channels, threads, and search that persist across sessions, and
+[memories](https://github.com/openai/codex/tree/main/codex-rs/memories), which
+condense past sessions into a short summary given to every new one. Its memory
+prompts insist on evidence: record what the user actually said rather than an
+inferred preference, keep unverified claims marked as such, and let later
+corrections win.
 
 **Execution settles what argument cannot.** Running two implementations on the
 same inputs exposes defects that reading misses (McKeeman, "Differential
@@ -52,15 +57,16 @@ from the code catch more of its mistakes
 
 ## Protocol rules
 
-| Finding                            | Rule in Model Collab                                                                                                                                                                                                                     |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Influence erodes independence      | Each agent solves in its own Git worktree. Proposals stay sealed until both exist, as in a Delphi round.                                                                                                                                 |
-| Models conform and flip            | The contract allows changing an answer only for a failing input, a test result, or a quoted requirement, never because a peer disagrees or sounds sure. An `accept` must cite the accepter's own check.                                  |
-| Independent attempts fail together | Agents write tests from the specification before implementing, so tests encode the requirement rather than the code. The contract says agreement alone proves nothing.                                                                   |
-| Unique information goes unshared   | The contract asks each agent to report what its peer may not know: requirements found in the code, implied edge cases, traps.                                                                                                            |
-| Execution beats argument           | Cross-examination means running each agent's tests against the other's candidate in clean checkouts (`collab_checkout`) and checking where behavior differs.                                                                             |
-| Findings are lost between goals    | A project board keeps findings across goals, and the contract asks agents to search it before solving. Posts from earlier goals are leads to verify, not facts. Posts from the current goal stay sealed until both agents have proposed. |
-| Debate costs more than it returns  | Proposing counts as voting. One acceptance ends the session. Each agent gets one message per round, equal candidates break ties by ID, and rounds are capped.                                                                            |
+| Finding                            | Rule in Model Collab                                                                                                                                                                                                                                                                                |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Influence erodes independence      | Each agent solves in its own Git worktree. Proposals stay sealed until both exist, as in a Delphi round.                                                                                                                                                                                            |
+| Models conform and flip            | The contract allows changing an answer only for a failing input, a test result, or a quoted requirement, never because a peer disagrees or sounds sure. An `accept` must cite the accepter's own check.                                                                                             |
+| Independent attempts fail together | Agents write tests from the specification before implementing, so tests encode the requirement rather than the code. The contract says agreement alone proves nothing.                                                                                                                              |
+| Unique information goes unshared   | The contract asks each agent to report what its peer may not know: requirements found in the code, implied edge cases, traps.                                                                                                                                                                       |
+| Execution beats argument           | Cross-examination means running each agent's tests against the other's candidate in clean checkouts (`collab_checkout`) and checking where behavior differs.                                                                                                                                        |
+| Findings are lost between goals    | A project board keeps findings across goals, and the contract asks agents to search it before solving. Posts from earlier goals are leads to verify, not facts. Posts from the current goal stay sealed until both agents have proposed.                                                            |
+| Memory can mislead                 | After each goal, one model call without tools folds the goal into `.collab/MEMORY.md` under rules adapted from Codex: only claims the record supports, the user's words over inferred preferences, and user edits treated as authoritative. Agents are told memory is history to verify, not proof. |
+| Debate costs more than it returns  | Proposing counts as voting. One acceptance ends the session. Each agent gets one message per round, equal candidates break ties by ID, and rounds are capped.                                                                                                                                       |
 
 ## Why the board is not a chat
 

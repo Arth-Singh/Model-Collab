@@ -23,6 +23,7 @@ Run `npm run format` to apply the repository's formatting conventions.
 - `src/core.js` owns state transitions, votes, verification, and applying.
 - `src/workspace.js` creates worktrees, snapshots candidates, and builds checkouts.
 - `src/board.js` stores, filters, and pages the project board.
+- `src/memory.js` condenses finished goals into project memory.
 - `src/up.js`, `src/setup.js`, and `src/control.js` manage native terminal sessions.
 - `src/worker.js` runs unattended turns.
 - `src/server.js` exposes the MCP interface.

@@ -66,6 +66,17 @@ export function renderWorkerEvent(event) {
     return `[${event.agent}] Message rejected; asking for one correction: ${event.reason}`;
   if (event.event === 'discarded')
     return `[${event.agent}] Discarded a turn prepared before your latest note.`;
+  if (event.event === 'memory') {
+    if (event.status === 'updating')
+      return event.when === 'before'
+        ? 'Updating project memory from the previous goal.'
+        : 'Updating project memory from this goal.';
+    if (event.status === 'failed')
+      return `Project memory was not updated: ${event.error} Run model-collab memory update to retry.`;
+    return event.changed
+      ? 'Project memory updated: .collab/MEMORY.md'
+      : 'Project memory unchanged; nothing durable to add.';
+  }
   if (event.event === 'cancelled')
     return `[${event.agent}] Stopped its turn early; the session is ${event.reason}.`;
   return null;

@@ -17,9 +17,10 @@ model-collab up "Find why the cache returns expired entries and fix it"
   not what they say about it.
 - **No ping-pong.** Proposing counts as a vote. One acceptance ends the session,
   so the shortest run is one proposal each and one verdict.
-- **Findings carry over.** A shared board, modeled on the one OpenAI is
-  building for Codex, keeps reproductions, dead ends, and decisions across
-  goals. Agents search it before they start.
+- **Findings carry over.** A shared board keeps reproductions, dead ends, and
+  decisions across goals, and after each goal a project memory condenses what
+  was learned. Both follow designs OpenAI is building into Codex. Agents read
+  them before they start and verify before they trust them.
 - **Your tree stays yours. The agreed change is applied only when the agents
   converge, and never over files you edited in the meantime.
 
@@ -148,7 +149,7 @@ hard problems and judge it by what ships.
 - [Design](docs/design.md): the research behind each protocol rule
 - [Usage](docs/usage.md): existing panes, project context, and unattended sessions
 - [Configuration](docs/configuration.md): models, limits, checks, and CLI options
-- [Protocol](docs/protocol.md): worktrees, candidates, messages, the board, and applying
+- [Protocol](docs/protocol.md): worktrees, candidates, messages, the board, memory, and applying
 - [Troubleshooting](docs/troubleshooting.md): setup, stalled agents, and conflicts
 - [Contributing](CONTRIBUTING.md): development setup and tests
 

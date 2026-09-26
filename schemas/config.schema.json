@@ -45,6 +45,10 @@
       "minimum": 1,
       "maximum": 3600
     },
+    "memory": {
+      "default": true,
+      "type": "boolean"
+    },
     "dependencyDirs": {
       "default": ["node_modules", ".venv", "venv"],
       "maxItems": 20,

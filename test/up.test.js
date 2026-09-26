@@ -15,6 +15,8 @@ import { renderStartup } from '../src/display.js';
 const execFileAsync = promisify(execFile);
 const cli = fileURLToPath(new URL('../bin/model-collab.js', import.meta.url));
 const models = { codex: 'fixture-codex', claude: 'fixture-claude' };
+const MEMORY = (line) =>
+  `# Project memory\n## User preferences\n- none yet\n## Project knowledge\n- none yet\n## Pitfalls\n- none yet\n## Goal history\n- ${line}\n`;
 const dangerous = `Investigate $(touch GOAL_INJECTION); 'double " quote' \`touch BACKTICK_INJECTION\`\nKeep this exact goal.`;
 
 async function fixture(t, unusual = false) {
@@ -254,11 +256,16 @@ test(
     const { root } = await fixture(t);
     const turns = [];
     const events = [];
+    const remembered = [];
     const result = await up({
       root,
       goal: 'Check the overlap predicate.',
       ui: 'workers',
       onEvent: (event) => events.push(event),
+      memoryCall: async ({ input }) => {
+        remembered.push(input);
+        return { changed: true, memory: MEMORY('2026-09-27 overlap predicate: converged') };
+      },
       turn: async ({ agent, state }) => {
         turns.push(agent);
         if (state.session.phase === 'independent')
@@ -294,8 +301,57 @@ test(
       /Collaboration converged[\s\S]*Agreed on m[12] and applied/,
     );
     assert.equal(events.filter((event) => event.event === 'complete').length, 1);
+    assert.equal(remembered.length, 1);
+    assert.match(remembered[0], /Check the overlap predicate[\s\S]*Outcome: converged/);
+    assert.deepEqual(result.memory.consolidated, [result.sessionId]);
+    assert.match(
+      await fs.readFile(path.join(root, '.collab', 'MEMORY.md'), 'utf8'),
+      /overlap predicate: converged/,
+    );
+    assert.deepEqual(
+      events.filter((event) => event.event === 'memory').map((event) => event.status),
+      ['updating', 'updated'],
+    );
   },
 );
+
+test('a new goal first remembers the finished one, and a memory failure never blocks it', async (t) => {
+  const { root } = await fixture(t);
+  const fake = fakeTmux();
+  const first = await up({ root, goal: 'Goal one.', runTmux: fake.run });
+  await new Collaboration(root).stop('Done.');
+  const inputs = [];
+  const events = [];
+  const second = await up({
+    root,
+    goal: 'Goal two.',
+    runTmux: fake.run,
+    onEvent: (event) => events.push(event),
+    memoryCall: async ({ input }) => {
+      inputs.push(input);
+      return { changed: true, memory: MEMORY('goal one: stopped') };
+    },
+  });
+  assert.notEqual(second.sessionId, first.sessionId);
+  assert.equal(inputs.length, 1);
+  assert.match(inputs[0], /Goal one\.[\s\S]*Outcome: stopped/);
+  assert.equal(events[0].when, 'before');
+  await new Collaboration(root).stop('Done.');
+  const failed = [];
+  const third = await up({
+    root,
+    goal: 'Goal three.',
+    runTmux: fake.run,
+    onEvent: (event) => failed.push(event),
+    memoryCall: async () => {
+      throw new Error('provider unavailable');
+    },
+  });
+  assert.ok(third.sessionId);
+  assert.equal(failed.at(-1).status, 'failed');
+  assert.match(failed.at(-1).error, /provider unavailable/);
+  assert.match(await fs.readFile(path.join(root, '.collab', 'MEMORY.md'), 'utf8'), /goal one/);
+});
 
 test(
   'real tmux passes quotes, spaces and shell syntax literally to fixture panes',

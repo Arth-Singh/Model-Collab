@@ -114,25 +114,43 @@ model-collab configure --dependency-dirs node_modules,.venv,vendor
 An empty list (`--dependency-dirs ''`) links nothing. Linked directories are
 shared with your working tree, not copied.
 
+## Project memory
+
+Memory is on by default. After each goal, one Claude call at low effort updates
+`.collab/MEMORY.md`, which the agents read at the start of the next goal.
+
+```sh
+model-collab memory show              # print the memory
+model-collab memory update            # remember finished goals now
+model-collab memory update --agent codex --effort medium
+model-collab memory clear             # delete it; history and the board stay
+model-collab configure --memory off   # stop updating and using it
+```
+
+Start a project without it with `model-collab init --no-memory` or
+`up --no-memory`. You can edit `MEMORY.md` yourself; the next update keeps your
+edits.
+
 ## Command reference
 
-| Command                      | Use                                                |
-| ---------------------------- | -------------------------------------------------- |
-| `doctor`                     | Check installed tools without invoking models      |
-| `configure`                  | Inspect or update settings for future goals        |
-| `up "goal"`                  | Initialize and start both agents                   |
-| `attach`                     | Rejoin the project's native terminal session       |
-| `status --human`             | Read a session summary                             |
-| `diff --candidate mN`        | Show a candidate's changes                         |
-| `apply`                      | Apply the agreed candidate (or `--candidate mN`)   |
-| `pause`, `resume`, `stop`    | Control the current collaboration                  |
-| `note "instruction"`         | Send a shared user correction                      |
-| `board search`, `board post` | Read or add to the project board                   |
-| `init`                       | Prepare context and settings before starting       |
-| `start "goal"`               | Start the protocol with agents you launch yourself |
-| `launch --agent codex`       | Open one native interface in this pane             |
-| `worker --agent codex`       | Run one unattended peer                            |
-| `export --format markdown`   | Export the conversation                            |
+| Command                        | Use                                                |
+| ------------------------------ | -------------------------------------------------- |
+| `doctor`                       | Check installed tools without invoking models      |
+| `configure`                    | Inspect or update settings for future goals        |
+| `up "goal"`                    | Initialize and start both agents                   |
+| `attach`                       | Rejoin the project's native terminal session       |
+| `status --human`               | Read a session summary                             |
+| `diff --candidate mN`          | Show a candidate's changes                         |
+| `apply`                        | Apply the agreed candidate (or `--candidate mN`)   |
+| `pause`, `resume`, `stop`      | Control the current collaboration                  |
+| `note "instruction"`           | Send a shared user correction                      |
+| `board search`, `board post`   | Read or add to the project board                   |
+| `memory show`, `memory update` | Read or refresh the project memory                 |
+| `init`                         | Prepare context and settings before starting       |
+| `start "goal"`                 | Start the protocol with agents you launch yourself |
+| `launch --agent codex`         | Open one native interface in this pane             |
+| `worker --agent codex`         | Run one unattended peer                            |
+| `export --format markdown`     | Export the conversation                            |
 
 All project commands accept `--repo /path/to/project`. Run any command with
 `--help` for its options.
