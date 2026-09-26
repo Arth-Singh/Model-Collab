@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { Collaboration } from '../src/core.js';
 import { runCommand } from '../src/process.js';
+import { gitProject } from './helpers.js';
 
 const cli = fileURLToPath(new URL('../bin/model-collab.js', import.meta.url));
 const message = (kind = 'proposal', extra = {}) => ({
@@ -15,12 +16,12 @@ const message = (kind = 'proposal', extra = {}) => ({
   kind,
   summary: 'Review the current goal.',
   evidence: ['Checked the current goal and candidate.'],
+  ...(kind === 'proposal' ? { solution: 'Written answer for the current goal.' } : {}),
   ...extra,
 });
 
 test('project setup and controls provide readable output while preserving JSON automation', async (t) => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'model-collab-onboarding-'));
-  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const root = await gitProject(t, 'model-collab-onboarding-');
   const run = async (...args) => {
     const result = await runCommand([process.execPath, cli, ...args, '--repo', root], {
       cwd: root,
@@ -62,8 +63,7 @@ test('project setup and controls provide readable output while preserving JSON a
 });
 
 async function fixture(t) {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'model-collab-cli-'));
-  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const root = await gitProject(t, 'model-collab-cli-');
   const collab = new Collaboration(root);
   await collab.init();
   const state = await collab.start({ topic: 'Goal A' });
@@ -154,4 +154,29 @@ test('CLI rejects a stale acceptance despite reused candidate IDs and allows a c
   const retry = await post(currentVote, replacement.session.id);
   assert.equal(retry.code, 0, retry.stderr);
   assert.equal(JSON.parse(retry.stdout).duplicate, true);
+});
+
+test('CLI diff, checkout and apply let a person review and apply candidates', async (t) => {
+  const { collab } = await fixture(t);
+  const root = collab.root;
+  const cliRun = (...args) =>
+    runCommand([process.execPath, cli, ...args, '--repo', root], { cwd: root });
+  const codex = (await collab.status('codex')).session.workspace;
+  await fs.writeFile(path.join(codex, 'README.md'), 'Codex answer\n');
+  const candidate = (await collab.post('codex', message())).message.id;
+  await collab.post('claude', message());
+  const diff = await cliRun('diff', '--agent', 'claude', '--candidate', candidate);
+  assert.equal(diff.code, 0, diff.stderr);
+  assert.match(diff.stdout, /-Project\n\+Codex answer/);
+  const checkout = await cliRun('checkout', '--agent', 'claude', '--candidate', candidate);
+  const copy = JSON.parse(checkout.stdout).path;
+  assert.equal(await fs.readFile(path.join(copy, 'README.md'), 'utf8'), 'Codex answer\n');
+  const early = await cliRun('apply', '--candidate', candidate);
+  assert.notEqual(early.code, 0);
+  assert.match(early.stderr, /Stop the collaboration/);
+  await collab.stop('Pick the alternative manually.');
+  const applied = await cliRun('apply', '--candidate', candidate);
+  assert.equal(applied.code, 0, applied.stderr);
+  assert.match(applied.stdout, /Applied m1: README.md/);
+  assert.equal(await fs.readFile(path.join(root, 'README.md'), 'utf8'), 'Codex answer\n');
 });

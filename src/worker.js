@@ -16,8 +16,9 @@ const MAX_TURN_TIMEOUT_MS = 3600000;
 // One corrective call when the protocol rejects a message. A rejected message
 // would otherwise end the whole session and discard every earlier turn.
 const MAX_REPAIRS_PER_TURN = 1;
+const SESSION_POLL_MS = 1000;
 
-// Claude's shell runs in its OS sandbox: writes stay in the project and temp
+// Claude's shell runs in its OS sandbox: writes stay in its workspace and temp
 // directories and network access is denied, matching Codex workspace-write.
 const CLAUDE_WORKER_SETTINGS = JSON.stringify({
   disableAllHooks: true,
@@ -34,20 +35,10 @@ export const TURN_SCHEMA = {
     evidence: { type: 'array', items: string },
     candidate: { type: ['string', 'null'] },
     solution: { type: ['string', 'null'] },
-    files: { type: 'array', items: string },
     repliesTo: { type: ['string', 'null'] },
     resolves: { type: 'array', items: string },
   },
-  required: [
-    'kind',
-    'summary',
-    'evidence',
-    'candidate',
-    'solution',
-    'files',
-    'repliesTo',
-    'resolves',
-  ],
+  required: ['kind', 'summary', 'evidence', 'candidate', 'solution', 'repliesTo', 'resolves'],
 };
 
 function cleanMessage(value) {
@@ -59,9 +50,22 @@ function cleanMessage(value) {
 
 function phaseGuide(session, maxRounds) {
   if (session.phase === 'independent')
-    return 'This is the independent phase. Your peer cannot see your work and you cannot see theirs. Build and test your answer in a scratch copy outside the repository (for example under $TMPDIR), leave shared files unchanged, and return one proposal with the complete solution and the evidence you actually observed.';
+    return 'Independent phase. Your workspace is a private copy of the project; your peer works in its own and neither can see the other. Pin down the contract, write tests from the specification, implement, and run the tests in your workspace. Return a proposal: the tool snapshots every file you changed, so put your design decisions in `solution` and what you ran in `evidence`.';
   const last = session.round >= maxRounds;
-  return `This is discussion round ${session.round} of ${maxRounds}${last ? ' (final round: accept a verified candidate or record the unresolved alternatives and what would settle them)' : ''}. Both independent proposals are now visible. Spend this turn on the most consequential open question: compare behavior, try to break the leading candidate, integrate into the shared files if that is your job, or verify and accept.`;
+  return `Cross-examination, round ${session.round} of ${maxRounds}${last ? ' (final round: accept a candidate you verified, or record the unresolved alternatives and the check that would settle them)' : ''}. Every current candidate is visible. Read each with collab_diff, get a runnable copy with collab_checkout, and run your tests against your peer's candidate and your peer's tests against yours. Then send one verdict: accept the correct candidate, challenge one with a failing input, or propose a revision from your workspace that fixes a demonstrated defect.`;
+}
+
+async function sharedContext(root) {
+  const parts = await Promise.all(
+    ['CONTEXT.md', 'RESEARCH.md', 'BRIEF.md'].map(async (name) => {
+      const text = await fs.readFile(path.join(root, '.collab', name), 'utf8').catch((e) => {
+        if (e.code === 'ENOENT') return '';
+        throw e;
+      });
+      return text ? `${name}\n${text.slice(0, 16000)}` : '';
+    }),
+  );
+  return parts.filter(Boolean).join('\n\n');
 }
 
 export async function nativeTurn({
@@ -76,35 +80,26 @@ export async function nativeTurn({
   rejection,
 }) {
   const id = randomUUID();
+  const workspace = state.session.workspace;
+  if (!workspace) throw new Error(`No workspace for ${agent}; start the goal again.`);
   const schemaFile = path.join(logDir, `${id}.schema.json`),
     finalFile = path.join(logDir, `${id}.response.json`);
   await fs.writeFile(schemaFile, JSON.stringify(TURN_SCHEMA));
   const config = serverConfig(root, agent, { contract: false });
   config.args.push('--worker-tools');
-  const context = (
-    await Promise.all(
-      ['CONTEXT.md', 'RESEARCH.md', 'BRIEF.md'].map(async (name) => {
-        const text = await fs.readFile(path.join(root, '.collab', name), 'utf8').catch((e) => {
-          if (e.code === 'ENOENT') return '';
-          throw e;
-        });
-        return text ? `${name}\n${text.slice(0, 16000)}` : '';
-      }),
-    )
-  )
-    .filter(Boolean)
-    .join('\n\n');
+  const context = await sharedContext(root);
   const research = state.config.preset === 'research' ? researchContract : '';
   const repair = rejection
     ? `\nYOUR PREVIOUS MESSAGE FOR THIS TURN WAS REJECTED\n${rejection}\nKeep the work you already did. Return a corrected message that satisfies the protocol; if the rule cannot be met yet, choose a message kind that can (for example evidence instead of accept).\n`
     : '';
   const prompt = `${peerContract}\n\n${research}\n\nWORKER TURN (replaces the contract's send and wait steps)
 You are ${agent}. This process makes exactly one contribution and exits; the worker delivers it and wakes you when the next round is ready.
+- Your workspace is ${workspace}. It is your current directory. Edit files only there.
 - ${phaseGuide(state.session, state.config.maxRounds)}
-- The filtered session below is current as of this turn. Call collab_status only if you need a fresher view. Use collab_claim and collab_release around edits to shared files and collab_verify for configured checks.
-- Do not call collab_post, collab_start, collab_stop, collab_wait, or the model-collab CLI. Do not read or edit anything under .collab/ except CONTEXT.md, RESEARCH.md, and BRIEF.md.
+- The filtered session below is current as of this turn. Use collab_status only if you need a fresher view, and collab_verify to run configured checks.
+- Do not call collab_post, collab_start, collab_stop, collab_wait, or the model-collab CLI. Do not read or edit ${path.join(root, '.collab')} except CONTEXT.md, RESEARCH.md, BRIEF.md, and checkouts the tools create for you.
 - Return the message as JSON matching the output schema, with null for unused optional strings. Omit clientMessageId, sessionId, and contextVersion; the worker binds them to this turn.
-- No background agents or recursive CLI calls. Stay within the user's repository scope and its normal instructions.
+- No background agents or recursive CLI calls. Stay within the user's scope and the repository's normal instructions.
 ${repair}
 SHARED CONTEXT\n${context || '(none)'}\n\nFILTERED SESSION\n${JSON.stringify(state)}\n`;
   const args =
@@ -137,7 +132,7 @@ SHARED CONTEXT\n${context || '(none)'}\n\nFILTERED SESSION\n${JSON.stringify(sta
           '--model',
           model ?? DEFAULT_MODELS.codex,
           '--cd',
-          root,
+          workspace,
           '--output-schema',
           schemaFile,
           '--output-last-message',
@@ -171,7 +166,7 @@ SHARED CONTEXT\n${context || '(none)'}\n\nFILTERED SESSION\n${JSON.stringify(sta
           CLAUDE_WORKER_SETTINGS,
         ];
   const result = await runProcess(agent, args, {
-    cwd: root,
+    cwd: workspace,
     input: prompt,
     timeoutMs,
     deadlineMs: Date.parse(state.session.deadlineAt),
@@ -197,6 +192,22 @@ SHARED CONTEXT\n${context || '(none)'}\n\nFILTERED SESSION\n${JSON.stringify(sta
   return cleanMessage(response.structured_output ?? response.result);
 }
 
+/** Abort `controller` as soon as the session ends or is replaced. Returns a stop function. */
+function watchSession(collab, agent, sessionId, controller) {
+  let stopped = false;
+  (async () => {
+    while (!stopped && !controller.signal.aborted) {
+      await new Promise((resolve) => setTimeout(resolve, SESSION_POLL_MS));
+      if (stopped) return;
+      const s = (await collab.status(agent).catch(() => null))?.session;
+      if (s && (s.id !== sessionId || s.status !== 'active')) controller.abort();
+    }
+  })();
+  return () => {
+    stopped = true;
+  };
+}
+
 /** The worker waits locally between turns, making no model calls while idle. */
 export async function runWorker({
   root,
@@ -219,14 +230,17 @@ export async function runWorker({
   const logDir = path.join(root, '.collab', 'workers', agent);
   await fs.mkdir(logDir, { recursive: true });
   const release = await lockfile.lock(logDir, { realpath: false, retries: 0, stale: 10000 });
-  let calls = 0,
-    seen = new Set();
+  let calls = 0;
+  const seen = new Set();
+  const sameSession = (state) => {
+    if (state.session?.id !== sessionId)
+      throw new Error('Active session changed; restart the worker for the new goal.');
+    return state.session;
+  };
   try {
     while (!signal?.aborted) {
       const state = await collab.status(agent),
-        s = state.session;
-      if (s.id !== sessionId)
-        throw new Error('Active session changed; restart the worker for the new goal.');
+        s = sameSession(state);
       for (const message of s.messages)
         if (!seen.has(message.id)) {
           seen.add(message.id);
@@ -245,6 +259,7 @@ export async function runWorker({
           status: s.status,
           reason: s.stopReason,
           winner: s.winner,
+          applied: s.applied,
           calls,
         });
         return { status: s.status, winner: s.winner, calls };
@@ -260,7 +275,14 @@ export async function runWorker({
       let rejection = null;
       for (let repairs = 0; ; repairs++) {
         calls++;
-        let body;
+        // A peer can end the session (for example by accepting) while this turn
+        // runs; the turn is then cancelled instead of spending more tokens.
+        const turnController = new AbortController();
+        const stopWatching = watchSession(collab, agent, sessionId, turnController);
+        const turnSignal = signal
+          ? AbortSignal.any([signal, turnController.signal])
+          : turnController.signal;
+        let body, failure;
         try {
           body = await turn({
             root,
@@ -270,23 +292,23 @@ export async function runWorker({
             state,
             timeoutMs: Math.max(1, Math.min(timeoutMs, Date.parse(s.deadlineAt) - Date.now())),
             logDir,
-            signal,
+            signal: turnSignal,
             rejection,
           });
         } catch (error) {
-          if (signal?.aborted) return { status: 'interrupted', calls };
-          const current = await collab.status(agent);
-          if (current.session.id === sessionId && current.session.status !== 'active')
-            return { status: current.session.status, winner: current.session.winner, calls };
-          throw error;
+          failure = error;
+        } finally {
+          stopWatching();
         }
         if (signal?.aborted) return { status: 'interrupted', calls };
-        const current = await collab.status(agent);
-        if (current.session.id !== sessionId)
-          throw new Error('Active session changed; restart the worker for the new goal.');
-        if (current.session.status !== 'active')
-          return { status: current.session.status, winner: current.session.winner, calls };
-        if ((current.session.contextVersion ?? 0) !== (s.contextVersion ?? 0)) {
+        const latest = sameSession(await collab.status(agent));
+        if (latest.status !== 'active') {
+          if (turnController.signal.aborted)
+            onEvent({ event: 'cancelled', agent, reason: latest.status });
+          break;
+        }
+        if (failure) throw failure;
+        if ((latest.contextVersion ?? 0) !== (s.contextVersion ?? 0)) {
           // The user added a note mid-turn. Discard work prepared against the old
           // context; the next loop iteration takes a fresh turn with the note.
           onEvent({ event: 'discarded', agent, reason: 'context_changed' });
@@ -308,10 +330,9 @@ export async function runWorker({
           });
           break;
         } catch (error) {
-          const latest = await collab.status(agent);
-          if (latest.session.id === sessionId && latest.session.status !== 'active')
-            return { status: latest.session.status, winner: latest.session.winner, calls };
-          if (latest.session.id !== sessionId || repairs >= MAX_REPAIRS_PER_TURN) throw error;
+          const after = sameSession(await collab.status(agent));
+          if (after.status !== 'active') break;
+          if (repairs >= MAX_REPAIRS_PER_TURN) throw error;
           rejection = error.message;
           onEvent({ event: 'rejected', agent, reason: rejection });
         }

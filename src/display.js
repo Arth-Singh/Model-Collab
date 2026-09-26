@@ -6,11 +6,14 @@ export function renderStartup(result, goal) {
   }
   if (result.ui === 'workers') {
     return [
-      'Collaboration finished.',
+      `Collaboration ${result.status}${result.reason ? `: ${result.reason}` : '.'}`,
       ...result.peers.map(
-        (peer, index) => `${['codex', 'claude'][index]}: ${peer.status} (${peer.calls} calls)`,
+        (peer, index) => `${['codex', 'claude'][index]}: ${peer.calls} model calls`,
       ),
-    ].join('\n');
+      renderApplied(result),
+    ]
+      .filter(Boolean)
+      .join('\n');
   }
   return [
     result.reused ? 'Existing collaboration ready.' : 'Collaboration started.',
@@ -22,6 +25,15 @@ export function renderStartup(result, goal) {
   ].join('\n');
 }
 
+function renderApplied({ winner, applied }) {
+  if (!winner)
+    return 'No candidate was agreed. Review the alternatives with model-collab status --human.';
+  if (applied?.error) return `Agreed on ${winner}, but it was not applied: ${applied.error}`;
+  if (applied)
+    return `Agreed on ${winner} and applied it to your working tree: ${applied.files.join(', ') || 'no file changes'}.`;
+  return `Agreed on ${winner}.`;
+}
+
 export function renderStatus(state) {
   const session = state.session;
   if (!session) return 'No active goal. Start one with model-collab up "Your goal".';
@@ -31,7 +43,7 @@ export function renderStatus(state) {
     `Round: ${session.round} of ${state.config.maxRounds}`,
   ];
   if (session.stopReason) lines.push(`Reason: ${session.stopReason}`);
-  if (session.winner) lines.push(`Accepted proposal: ${session.winner}`);
+  if (session.winner || session.status === 'converged') lines.push(renderApplied(session));
   const recent = session.messages.slice(-4);
   if (recent.length)
     lines.push(
@@ -50,7 +62,7 @@ export function renderWorkerEvent(event) {
     return `[${event.agent}] Message rejected; asking for one correction: ${event.reason}`;
   if (event.event === 'discarded')
     return `[${event.agent}] Discarded a turn prepared before your latest note.`;
-  if (event.event === 'complete')
-    return `Session ${event.status}${event.reason ? `: ${event.reason}` : '.'}`;
+  if (event.event === 'cancelled')
+    return `[${event.agent}] Stopped its turn early; the session is ${event.reason}.`;
   return null;
 }

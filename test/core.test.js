@@ -8,6 +8,7 @@ import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { Collaboration } from '../src/core.js';
 import { launch, writeInstructions } from '../src/setup.js';
+import { gitProject } from './helpers.js';
 
 const execFileAsync = promisify(execFile);
 const cli = fileURLToPath(new URL('../bin/model-collab.js', import.meta.url));
@@ -17,12 +18,12 @@ const message = (kind, extra = {}) => ({
   kind,
   summary: `${kind} backed by a check`,
   evidence: ['Boundary example produces the expected result.'],
+  ...(kind === 'proposal' ? { solution: `Answer ${serial}: max(start) < min(end).` } : {}),
   ...extra,
 });
 
-async function fixture(t, config = {}) {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'model-collab-test-'));
-  t.after(() => fs.rm(root, { recursive: true, force: true }));
+async function fixture(t, config = {}, files) {
+  const root = await gitProject(t, 'model-collab-test-', files);
   const collab = new Collaboration(root);
   await collab.init(config);
   await collab.start({
@@ -30,6 +31,13 @@ async function fixture(t, config = {}) {
     successCriteria: ['Adjacent intervals do not overlap.'],
   });
   return { root, collab };
+}
+
+const workspace = async (collab, agent) => (await collab.status(agent)).session.workspace;
+async function edit(collab, agent, file, content) {
+  const target = path.join(await workspace(collab, agent), file);
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, content);
 }
 
 async function independent(collab, extra = {}) {
@@ -69,18 +77,97 @@ test('settings change only between goals and preserve prior conversation history
   assert.deepEqual(history.messages, previous.session.messages);
 });
 
+test('each peer gets a private Git worktree of the current project, including uncommitted work', async (t) => {
+  const root = await gitProject(t, 'model-collab-test-', {
+    'src/a.js': 'export const a = 1;\n',
+    '.gitignore': 'node_modules/\n.collab/\n',
+  });
+  await fs.writeFile(path.join(root, 'src/a.js'), 'export const a = 2; // uncommitted\n');
+  await fs.writeFile(path.join(root, 'notes.txt'), 'untracked\n');
+  await fs.mkdir(path.join(root, 'node_modules/dep'), { recursive: true });
+  await fs.writeFile(path.join(root, 'node_modules/dep/index.js'), 'module.exports = 1;\n');
+  const collab = new Collaboration(root);
+  await collab.init();
+  await collab.start({ topic: 'Change a.' });
+  const codex = await workspace(collab, 'codex');
+  const claude = await workspace(collab, 'claude');
+  assert.notEqual(codex, claude);
+  assert.ok(codex.startsWith(path.join(root, '.collab', 'work')));
+  assert.equal(
+    await fs.readFile(path.join(codex, 'src/a.js'), 'utf8'),
+    'export const a = 2; // uncommitted\n',
+  );
+  assert.equal(await fs.readFile(path.join(codex, 'notes.txt'), 'utf8'), 'untracked\n');
+  assert.equal(
+    await fs.readFile(path.join(codex, 'node_modules/dep/index.js'), 'utf8'),
+    'module.exports = 1;\n',
+  );
+  const view = (await collab.status('codex')).session;
+  assert.equal(view.workspaces, undefined);
+  assert.equal(view.base, undefined);
+  await fs.writeFile(path.join(codex, 'src/a.js'), 'export const a = 3;\n');
+  assert.equal(
+    await fs.readFile(path.join(claude, 'src/a.js'), 'utf8'),
+    'export const a = 2; // uncommitted\n',
+  );
+  assert.equal(
+    await fs.readFile(path.join(root, 'src/a.js'), 'utf8'),
+    'export const a = 2; // uncommitted\n',
+  );
+});
+
+test('proposals snapshot changed files; dependency links and .collab are never captured', async (t) => {
+  const { root, collab } = await fixture(
+    t,
+    {},
+    {
+      'src/a.js': 'old\n',
+      'remove-me.txt': 'x\n',
+      '.gitignore': 'node_modules/\n.collab/\n',
+    },
+  );
+  await assert.rejects(
+    collab.post('codex', message('proposal', { solution: undefined })),
+    /no changes/,
+  );
+  const ws = await workspace(collab, 'codex');
+  await fs.writeFile(path.join(ws, 'src/a.js'), 'new\n');
+  await fs.writeFile(path.join(ws, 'src/b.js'), 'added\n');
+  await fs.rm(path.join(ws, 'remove-me.txt'));
+  await fs.mkdir(path.join(ws, 'src/__pycache__'));
+  await fs.writeFile(path.join(ws, 'src/__pycache__/b.cpython-313.pyc'), 'bytecode');
+  await fs.writeFile(path.join(ws, '.DS_Store'), 'finder');
+  const posted = await collab.post('codex', message('proposal', { solution: undefined }));
+  const candidate = (await collab.status('codex')).session.candidates[0];
+  assert.deepEqual(
+    candidate.changes.map((c) => [c.path, c.status]),
+    [
+      ['remove-me.txt', 'deleted'],
+      ['src/a.js', 'modified'],
+      ['src/b.js', 'added'],
+    ],
+  );
+  await fs.writeFile(path.join(ws, 'src/a.js'), 'edited after proposing\n');
+  const checkout = await collab.checkout('codex', posted.message.id);
+  assert.equal(await fs.readFile(path.join(checkout.path, 'src/a.js'), 'utf8'), 'new\n');
+  await assert.rejects(fs.access(path.join(checkout.path, 'remove-me.txt')));
+  const { diff } = await collab.diff('codex', posted.message.id);
+  assert.match(diff, /-old\n\+new/);
+  assert.match(diff, /\+added/);
+  assert.equal(await fs.readFile(path.join(root, 'src/a.js'), 'utf8'), 'old\n');
+});
+
 test('independent proposals remain sealed until every peer submits; each peer gets one contribution per round', async (t) => {
   const { collab } = await fixture(t);
   await assert.rejects(collab.post('codex', message('evidence')), /independent proposal/);
-  const own = await collab.post(
-    'codex',
-    message('proposal', { solution: 'max(start) < min(end)' }),
-  );
+  const own = await collab.post('codex', message('proposal'));
   const sealed = await collab.status('claude');
   assert.equal(sealed.session.phase, 'independent');
   assert.deepEqual(sealed.session.messages, []);
   assert.deepEqual(sealed.session.candidates, []);
   assert.deepEqual(sealed.session.independentPeersPending, ['claude']);
+  await assert.rejects(collab.diff('claude', own.message.id), /Unknown candidate/);
+  await assert.rejects(collab.checkout('claude', own.message.id), /Unknown candidate/);
   assert.equal((await collab.status('codex')).session.messages[0].id, own.message.id);
   await assert.rejects(collab.post('codex', message('proposal')), /already contributed/);
   await collab.post('claude', message('proposal'));
@@ -88,41 +175,63 @@ test('independent proposals remain sealed until every peer submits; each peer ge
   assert.equal(shared.session.phase, 'discussion');
   assert.equal(shared.session.round, 1);
   assert.equal(shared.session.messages.length, 2);
+  await assert.doesNotReject(collab.diff('claude', own.message.id));
   await collab.post('claude', message('evidence'));
   await assert.rejects(collab.post('claude', message('evidence')), /already contributed/);
 });
 
-test('agreement requires every participant to explicitly accept the same candidate', async (t) => {
+test('proposing endorses: one acceptance of the peer candidate converges and applies it', async (t) => {
+  const { root, collab } = await fixture(t, {}, { 'answer.txt': 'unknown\n' });
+  await edit(collab, 'codex', 'answer.txt', 'half-open\n');
+  await edit(collab, 'claude', 'answer.txt', 'closed\n');
+  const [codex] = await independent(collab);
+  assert.deepEqual((await collab.status()).session.votes, { codex: 'm1', claude: 'm2' });
+  const result = await collab.post('claude', message('accept', { candidate: codex }));
+  assert.equal(result.status, 'converged');
+  assert.equal(result.winner, codex);
+  assert.deepEqual(result.applied.files, ['answer.txt']);
+  assert.equal(await fs.readFile(path.join(root, 'answer.txt'), 'utf8'), 'half-open\n');
+  await assert.rejects(collab.post('codex', message('evidence')), /converged/);
+});
+
+test('agreement requires every participant to back the same candidate', async (t) => {
   const { collab } = await fixture(t, { participants: ['codex', 'claude', 'reviewer'] });
   const first = await collab.post('codex', message('proposal'));
   await collab.post('claude', message('proposal'));
   await collab.post('reviewer', message('proposal'));
   const candidate = first.message.id;
   assert.equal((await collab.post('claude', message('accept', { candidate }))).status, 'active');
-  assert.equal((await collab.post('codex', message('accept', { candidate }))).status, 'active');
   const result = await collab.post('reviewer', message('accept', { candidate }));
   assert.equal(result.status, 'converged');
   assert.equal(result.winner, candidate);
-  await assert.rejects(collab.post('codex', message('evidence')), /converged/);
 });
 
-test('different accepted candidates do not converge; a new proposal clears prior votes', async (t) => {
+test('split votes do not converge; a revision supersedes and drops votes for the old candidate', async (t) => {
   const { collab } = await fixture(t);
   const [a, b] = await independent(collab);
   await collab.post('codex', message('accept', { candidate: a }));
   await collab.post('claude', message('accept', { candidate: b }));
   assert.equal((await collab.status()).session.status, 'active');
-  const replacement = await collab.post(
+  await collab.post('claude', message('accept', { candidate: a }));
+  let s = (await collab.status()).session;
+  assert.equal(s.status, 'converged');
+  const again = await fixture(t);
+  const [c] = await independent(again.collab);
+  await again.collab.post('claude', message('challenge', { candidate: c }));
+  const revision = await again.collab.post(
     'codex',
-    message('proposal', { summary: 'Revised candidate incorporates both boundary cases.' }),
+    message('proposal', { summary: 'Revised candidate handles the challenged case.' }),
   );
-  const s = (await collab.status()).session;
-  assert.deepEqual(s.votes, {});
-  assert.equal(s.candidates.find((c) => c.id === a).supersededBy, replacement.message.id);
-  await assert.rejects(collab.post('claude', message('accept', { candidate: a })), /superseded/);
+  s = (await again.collab.status()).session;
+  assert.equal(s.candidates.find((x) => x.id === c).supersededBy, revision.message.id);
+  assert.deepEqual(s.votes, { codex: revision.message.id, claude: 'm2' });
+  await assert.rejects(
+    again.collab.post('claude', message('accept', { candidate: c })),
+    /superseded/,
+  );
 });
 
-test('open challenges block acceptance and only their author can close them', async (t) => {
+test('open challenges block agreement and only their author can close them', async (t) => {
   const { collab } = await fixture(t);
   const [candidate] = await independent(collab);
   const challenge = await collab.post('claude', message('challenge', { candidate }));
@@ -132,44 +241,71 @@ test('open challenges block acceptance and only their author can close them', as
     /original challenger/,
   );
   await collab.post('codex', message('evidence', { repliesTo: challenge.message.id }));
-  await collab.post('claude', message('accept', { candidate, resolves: [challenge.message.id] }));
-  const final = await collab.post('codex', message('accept', { candidate }));
+  const final = await collab.post(
+    'claude',
+    message('accept', { candidate, resolves: [challenge.message.id] }),
+  );
   assert.equal(final.status, 'converged');
   assert.ok((await collab.status()).session.challenges[0].resolvedBy);
 });
 
-test('required checks and current artifact hashes gate acceptance', async (t) => {
-  const { root, collab } = await fixture(t, {
-    checks: {
-      unit: [
-        process.execPath,
-        '-e',
-        'if(require("node:fs").readFileSync("answer.txt","utf8")!=="correct")process.exit(2)',
-      ],
+test('required checks run in a clean checkout of the candidate and gate acceptance', async (t) => {
+  const { root, collab } = await fixture(
+    t,
+    {
+      checks: {
+        unit: [
+          process.execPath,
+          '-e',
+          'if(require("node:fs").readFileSync("answer.txt","utf8")!=="correct")process.exit(2)',
+        ],
+      },
     },
-  });
-  await fs.writeFile(path.join(root, 'answer.txt'), 'wrong');
-  const [candidate] = await independent(collab, { files: ['answer.txt'] });
-  await assert.rejects(collab.post('codex', message('accept', { candidate })), /Required checks/);
-  assert.equal((await collab.verify('claude', candidate, 'unit')).passed, false);
-  await assert.rejects(collab.post('codex', message('accept', { candidate })), /Required checks/);
-  await fs.writeFile(path.join(root, 'answer.txt'), 'correct');
-  await assert.rejects(collab.verify('codex', candidate, 'unit'), /files changed/);
-  await assert.rejects(collab.post('codex', message('accept', { candidate })), /files changed/);
-  const replacement = await collab.post('codex', message('proposal', { files: ['answer.txt'] }));
-  await collab.post('claude', message('evidence'));
-  const fresh = replacement.message.id;
-  assert.equal((await collab.verify('claude', fresh, 'unit')).passed, true);
-  await collab.post('codex', message('accept', { candidate: fresh }));
-  await fs.writeFile(path.join(root, 'answer.txt'), 'changed after first acceptance');
-  await assert.rejects(
-    collab.post('claude', message('accept', { candidate: fresh })),
-    /files changed/,
+    { 'answer.txt': 'unknown' },
   );
+  await edit(collab, 'codex', 'answer.txt', 'wrong');
+  await edit(collab, 'claude', 'answer.txt', 'correct');
+  const [wrong, right] = await independent(collab);
+  await edit(collab, 'codex', 'answer.txt', 'correct');
+  assert.equal((await collab.verify('claude', wrong, 'unit')).passed, false);
+  await assert.rejects(
+    collab.post('claude', message('accept', { candidate: wrong })),
+    /Required checks/,
+  );
+  await assert.rejects(
+    collab.post('codex', message('accept', { candidate: right })),
+    /Required checks/,
+  );
+  assert.equal((await collab.verify('codex', right, 'unit')).passed, true);
+  assert.equal(await fs.readFile(path.join(root, 'answer.txt'), 'utf8'), 'unknown');
+  const result = await collab.post('codex', message('accept', { candidate: right }));
+  assert.equal(result.status, 'converged');
+  assert.equal(await fs.readFile(path.join(root, 'answer.txt'), 'utf8'), 'correct');
+  assert.deepEqual(await fs.readdir(path.join(collab.dir, 'checkouts')), []);
+});
+
+test('a check that edits files cannot change the candidate it verifies', async (t) => {
+  const { collab } = await fixture(
+    t,
+    {
+      checks: {
+        mutate: [
+          process.execPath,
+          '-e',
+          'const fs=require("node:fs");if(fs.readFileSync("answer.txt","utf8")!=="original")process.exit(3);fs.writeFileSync("answer.txt","modified")',
+        ],
+      },
+    },
+    { 'answer.txt': 'original' },
+  );
+  await edit(collab, 'codex', 'extra.txt', 'x');
+  const [candidate] = await independent(collab);
+  assert.equal((await collab.verify('codex', candidate, 'mutate')).passed, true);
+  assert.equal((await collab.verify('claude', candidate, 'mutate')).passed, true);
 });
 
 test('verbose passing checks pass with a truncated tail and slow checks honor the project timeout', async (t) => {
-  const { root, collab } = await fixture(t, {
+  const { collab } = await fixture(t, {
     checkTimeoutSeconds: 1,
     checks: {
       verbose: [
@@ -180,8 +316,7 @@ test('verbose passing checks pass with a truncated tail and slow checks honor th
       slow: [process.execPath, '-e', 'setTimeout(() => {}, 5000)'],
     },
   });
-  await fs.writeFile(path.join(root, 'answer.txt'), 'correct');
-  const [candidate] = await independent(collab, { files: ['answer.txt'] });
+  const [candidate] = await independent(collab);
   const verbose = await collab.verify('codex', candidate, 'verbose');
   assert.equal(verbose.passed, true);
   assert.equal(verbose.outputTruncated, true);
@@ -191,18 +326,23 @@ test('verbose passing checks pass with a truncated tail and slow checks honor th
   assert.equal(slow.passed, false);
   assert.equal(slow.error, 'timeout');
   assert.ok(slow.durationMs < 4000);
+  await assert.rejects(collab.verify('codex', candidate, 'constructor'), /Unknown check/);
 });
 
-test('checks that modify a proposed artifact cannot certify the stale candidate', async (t) => {
-  const { root, collab } = await fixture(t, {
-    checks: {
-      mutate: [process.execPath, '-e', 'require("node:fs").writeFileSync("answer.txt","modified")'],
-    },
-  });
-  await fs.writeFile(path.join(root, 'answer.txt'), 'original');
-  const [candidate] = await independent(collab, { files: ['answer.txt'] });
-  await assert.rejects(collab.verify('codex', candidate, 'mutate'), /files changed/);
-  assert.deepEqual((await collab.status()).session.checks, []);
+test('the agreed candidate is not applied over user edits; apply works once they are resolved', async (t) => {
+  const { root, collab } = await fixture(t, {}, { 'answer.txt': 'base\n' });
+  await edit(collab, 'codex', 'answer.txt', 'agreed\n');
+  const [candidate] = await independent(collab);
+  await fs.writeFile(path.join(root, 'answer.txt'), 'user edit\n');
+  const result = await collab.post('claude', message('accept', { candidate }));
+  assert.equal(result.status, 'converged');
+  assert.match(result.applied.error, /you changed answer.txt/);
+  assert.equal(await fs.readFile(path.join(root, 'answer.txt'), 'utf8'), 'user edit\n');
+  await assert.rejects(collab.apply(), /you changed answer.txt/);
+  await fs.writeFile(path.join(root, 'answer.txt'), 'base\n');
+  assert.deepEqual((await collab.apply()).files, ['answer.txt']);
+  assert.equal(await fs.readFile(path.join(root, 'answer.txt'), 'utf8'), 'agreed\n');
+  await assert.rejects(collab.apply('m99'), /Unknown candidate/);
 });
 
 test('identical retries are idempotent, conflicting retries fail, and invalid input leaves state unchanged', async (t) => {
@@ -223,6 +363,7 @@ test('identical retries are idempotent, conflicting retries fail, and invalid in
   );
   await assert.rejects(collab.post('unknown', message('proposal')), /Unknown participant/);
   await assert.rejects(collab.post('claude', { ...message('proposal'), unsupported: true }));
+  await assert.rejects(collab.post('claude', { ...message('proposal'), files: ['a.js'] }));
   assert.deepEqual(await collab.status(), before);
 });
 
@@ -271,6 +412,7 @@ test('message and discussion-round limits stop debate without inventing a winner
     const state = await collab.status();
     assert.equal(state.session.stopReason, reason);
     assert.equal(state.session.winner, null);
+    assert.equal(state.session.applied, null);
     await assert.rejects(collab.post('codex', message('proposal')), /exhausted/);
   }
 });
@@ -288,76 +430,25 @@ test('deadline expiry persists even when the triggering write is rejected', asyn
   assert.equal(persisted.revision, state.revision + 1);
 });
 
-test('claims reject overlap, traversal and escaping symlinks; release and expiry free paths', async (t) => {
-  const { root, collab } = await fixture(t);
-  await collab.claim('codex', ['src']);
-  await assert.rejects(collab.claim('claude', ['src/index.js']), /claimed by codex/);
-  await assert.rejects(collab.claim('claude', ['../outside']), /relative/);
-  await assert.rejects(collab.claim('claude', ['/tmp/outside']), /relative/);
-  await assert.rejects(collab.claim('claude', ['.git/config']), /metadata/);
-  await assert.rejects(collab.claim('claude', ['.collab/state.json']), /metadata/);
-  await fs.symlink(os.tmpdir(), path.join(root, 'escape'));
-  await assert.rejects(collab.claim('claude', ['escape/new.js']), /Symlink escapes/);
-  await collab.release('codex');
-  await collab.claim('claude', ['src/index.js']);
-  await assert.rejects(collab.claim('codex', ['src']), /claimed by claude/);
-  const file = path.join(root, '.collab', 'state.json');
-  const state = JSON.parse(await fs.readFile(file, 'utf8'));
-  state.session.claims[0].expiresAt = Date.now() - 1;
-  await fs.writeFile(file, JSON.stringify(state));
-  assert.equal((await collab.claim('codex', ['src'])).length, 1);
-});
-
-test('symlink aliases cannot bypass path claims or reserved metadata protection', async (t) => {
-  const { root, collab } = await fixture(t);
-  await fs.mkdir(path.join(root, 'src'));
-  await fs.writeFile(path.join(root, 'src', 'answer.js'), 'export default 42;');
-  await fs.symlink('src', path.join(root, 'alias'));
-  await collab.claim('codex', ['src/answer.js']);
-  await assert.rejects(collab.claim('claude', ['alias/answer.js']), /claimed by codex/);
-  await collab.release('codex', ['./src/answer.js']);
-  assert.deepEqual((await collab.status()).session.claims, []);
-  await collab.claim('codex', ['alias/answer.js']);
-  await collab.release('codex', ['alias/answer.js']);
-  assert.deepEqual((await collab.status()).session.claims, []);
-  await fs.symlink('.collab', path.join(root, 'state-alias'));
-  await assert.rejects(collab.claim('claude', ['state-alias/state.json']), /metadata/);
-  await assert.rejects(collab.snapshot(['state-alias/state.json']), /metadata/);
-  await fs.symlink('.', path.join(root, 'self'));
-  await assert.rejects(collab.claim('claude', ['self']), /metadata|repository root/);
-});
-
-test('equivalent file spellings produce one stable artifact snapshot', async (t) => {
-  const { root, collab } = await fixture(t);
-  await fs.writeFile(path.join(root, 'answer.txt'), 'correct');
-  const [candidate] = await independent(collab, { files: ['answer.txt', './answer.txt'] });
-  assert.equal((await collab.status()).session.candidates[0].files.length, 1);
-  await assert.doesNotReject(collab.post('codex', message('accept', { candidate })));
-});
-
-test('semantic duplicates and repeated votes cannot prolong a discussion', async (t) => {
+test('semantic duplicates cannot prolong a discussion', async (t) => {
   const { collab } = await fixture(t);
-  const [candidate] = await independent(collab);
+  await independent(collab);
   const evidence = message('evidence', { summary: 'Exhaustively checked endpoints from 0 to 5.' });
   await collab.post('claude', evidence);
-  await collab.post('codex', message('accept', { candidate }));
+  await collab.post('codex', message('evidence', { summary: 'Different finding.' }));
   await assert.rejects(
     collab.post('claude', { ...evidence, clientMessageId: 'another-message-id' }),
     /Repeated contribution/,
   );
-  await assert.rejects(
-    collab.post('codex', message('accept', { candidate, summary: 'Still agree' })),
-    /already accepted/,
-  );
   assert.equal((await collab.status()).session.messages.length, 4);
 });
 
-test('start, stop and restart archive prior sessions and preserve user context', async (t) => {
+test('start, stop and restart archive prior sessions, replace worktrees, and preserve user context', async (t) => {
   const { root, collab } = await fixture(t);
   const original = await collab.status();
+  const oldWorkspace = await workspace(collab, 'codex');
   await assert.rejects(collab.init(), /Already initialized/);
   await assert.rejects(collab.start({ topic: 'Overlapping session' }), /already active/);
-  await collab.claim('codex', ['src/answer.js']);
   await writeInstructions(root, ['codex', 'claude']);
   await fs.writeFile(path.join(root, '.collab', 'CONTEXT.md'), 'User-owned context');
   await writeInstructions(root, ['codex', 'claude']);
@@ -365,20 +456,72 @@ test('start, stop and restart archive prior sessions and preserve user context',
     await fs.readFile(path.join(root, '.collab', 'CONTEXT.md'), 'utf8'),
     'User-owned context',
   );
+  await fs.writeFile(path.join(oldWorkspace, 'scratch.txt'), 'old session work');
   await collab.stop('User paused this experiment');
-  assert.deepEqual((await collab.status()).session.claims, []);
   const next = await collab.start({ topic: 'A new user-requested goal' });
   assert.notEqual(next.session.id, original.session.id);
+  await assert.rejects(fs.access(path.join(await workspace(collab, 'codex'), 'scratch.txt')));
+  const { stdout } = await execFileAsync('git', ['worktree', 'list'], { cwd: root });
+  assert.equal(stdout.trim().split('\n').length, 3);
   const archived = JSON.parse(
     await fs.readFile(path.join(root, '.collab', 'history', `${original.session.id}.json`), 'utf8'),
   );
   assert.equal(archived.status, 'stopped');
   assert.equal(archived.stopReason, 'User paused this experiment');
-  const codex = await launch(root, 'codex', { print: true });
-  const claude = await launch(root, 'claude', { print: true });
-  assert.equal(codex.cwd, root);
+  const codexWorkspace = await workspace(collab, 'codex');
+  const codex = await launch(root, 'codex', { print: true, workspace: codexWorkspace });
+  const claude = await launch(root, 'claude', {
+    print: true,
+    workspace: await workspace(collab, 'claude'),
+  });
+  assert.equal(codex.cwd, codexWorkspace);
+  assert.deepEqual(codex.args.slice(0, 6), [
+    '-C',
+    codexWorkspace,
+    '--sandbox',
+    'workspace-write',
+    '--add-dir',
+    path.join(root, '.collab'),
+  ]);
   assert.ok(codex.args.some((arg) => arg.includes('mcp_servers.model_collab')));
   assert.ok(claude.args.includes('--mcp-config'));
+  await assert.rejects(launch(root, 'codex', { print: true }), /No workspace/);
+});
+
+test('a project without Git is rejected with an actionable message', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'model-collab-nogit-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const collab = new Collaboration(root);
+  await collab.init();
+  await assert.rejects(collab.start({ topic: 'Anything' }), /needs a Git repository.*git init/);
+  assert.equal((await collab.status()).session, null);
+});
+
+test('open sessions from the shared-tree protocol are stopped on upgrade', async (t) => {
+  const root = await gitProject(t, 'model-collab-upgrade-');
+  await fs.mkdir(path.join(root, '.collab'));
+  await fs.writeFile(
+    path.join(root, '.collab', 'state.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      revision: 3,
+      config: { participants: ['codex', 'claude'] },
+      session: {
+        id: '00000000-0000-4000-8000-000000000001',
+        status: 'active',
+        deadlineAt: new Date(Date.now() + 60000).toISOString(),
+        claims: [{ agent: 'codex', path: 'a.js', expiresAt: Date.now() + 1000 }],
+        candidates: [{ id: 'm1', agent: 'codex', files: [{ path: 'a.js', sha256: 'x' }] }],
+        messages: [],
+      },
+    }),
+  );
+  const state = await new Collaboration(root).status();
+  assert.equal(state.schemaVersion, 2);
+  assert.equal(state.session.status, 'stopped');
+  assert.match(state.session.stopReason, /upgraded/);
+  assert.equal(state.session.claims, undefined);
+  assert.deepEqual(state.session.candidates[0].changes, []);
 });
 
 test('wait observes peer revisions and terminal status; a blocker stops both peers', async (t) => {
@@ -394,13 +537,4 @@ test('wait observes peer revisions and terminal status; a blocker stops both pee
   assert.equal(result.session.nextAction, 'stop');
   assert.equal(result.session.stopReason, 'Required source is unavailable');
   await assert.rejects(collab.wait('claude', -2, 1), /revision/);
-});
-
-test('verification cannot certify a text-only proposal or run an inherited check name', async (t) => {
-  const { collab } = await fixture(t, {
-    checks: { unit: [process.execPath, '-e', 'process.exit(0)'] },
-  });
-  const id = (await collab.post('codex', message('proposal'))).message.id;
-  await assert.rejects(collab.verify('codex', id, 'unit'), /file-backed proposal/);
-  await assert.rejects(collab.verify('codex', id, 'constructor'), /Unknown check/);
 });

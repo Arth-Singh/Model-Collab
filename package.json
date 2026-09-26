@@ -1,7 +1,7 @@
 {
   "name": "@arth-singh/model-collab",
-  "version": "0.2.0",
-  "description": "Run Codex and Claude Code together in your terminal",
+  "version": "0.3.0",
+  "description": "Codex and Claude Code solve independently, cross-examine each other's work, and ship one agreed change",
   "type": "module",
   "bin": {
     "model-collab": "bin/model-collab.js"

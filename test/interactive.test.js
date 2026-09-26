@@ -5,39 +5,37 @@ import path from 'node:path';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { Collaboration } from '../src/core.js';
+import { gitProject } from './helpers.js';
 
 const body = (kind = 'proposal', extra = {}) => ({
   clientMessageId: randomUUID(),
   kind,
   summary: 'Strict comparison respects half-open boundaries.',
   evidence: ['Adjacent intervals do not overlap.'],
+  ...(kind === 'proposal' ? { solution: 'Use max(start) < min(end).' } : {}),
   ...extra,
 });
 
 async function fixture(t, config = {}) {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'model-collab-interactive-'));
-  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const root = await gitProject(t, 'model-collab-interactive-');
   const collab = new Collaboration(root);
   await collab.init(config);
   await collab.start({ topic: 'Implement interval intersection.' });
   return { root, collab };
 }
 
-test('pause blocks new work and replacement, clears leases, and preserves independent sealing', async (t) => {
-  const { root, collab } = await fixture(t, {
+test('pause blocks new work and replacement and preserves independent sealing', async (t) => {
+  const { collab } = await fixture(t, {
     checks: { unit: [process.execPath, '-e', 'process.exit(0)'] },
   });
-  await fs.writeFile(path.join(root, 'answer.js'), 'export default 42;');
-  const first = await collab.post('codex', body('proposal', { files: ['answer.js'] }));
-  await collab.claim('codex', ['answer.js']);
+  const first = await collab.post('codex', body('proposal'));
   await collab.pause();
   const state = await collab.status('claude');
   assert.equal(state.session.status, 'paused');
-  assert.deepEqual(state.session.claims, []);
   assert.deepEqual(state.session.messages, []);
   assert.deepEqual(state.session.candidates, []);
+  await assert.rejects(collab.checkout('claude', first.message.id), /Unknown candidate/);
   await assert.rejects(collab.post('claude', body()), /paused/);
-  await assert.rejects(collab.claim('claude', ['new.js']), /paused/);
   await assert.rejects(collab.verify('codex', first.message.id, 'unit'), /paused/);
   await assert.rejects(collab.start({ topic: 'Must not replace a paused goal.' }), /paused/);
   await collab.stop('User stopped while paused.');
@@ -69,8 +67,7 @@ test('human notes invalidate votes and checks and require explicit current-conte
   const { root, collab } = await fixture(t, {
     checks: { unit: [process.execPath, '-e', 'process.exit(0)'] },
   });
-  await fs.writeFile(path.join(root, 'answer.js'), 'export default 42;');
-  const first = await collab.post('codex', body('proposal', { files: ['answer.js'] }));
+  const first = await collab.post('codex', body('proposal'));
   await collab.post('claude', body());
   await collab.verify('codex', first.message.id, 'unit');
   await collab.post('codex', body('accept', { candidate: first.message.id }));
@@ -116,58 +113,60 @@ test('human notes invalidate votes and checks and require explicit current-conte
 });
 
 test('a human note invalidates a verification already running', { timeout: 5000 }, async (t) => {
-  const script =
-    'const fs=require("node:fs");fs.writeFileSync("check.started","yes");const timer=setInterval(()=>{if(fs.existsSync("check.finish")){clearInterval(timer);process.exit(0)}},10);';
-  const { root, collab } = await fixture(t, { checks: { unit: [process.execPath, '-e', script] } });
-  await fs.writeFile(path.join(root, 'answer.js'), 'export default 42;');
-  const first = await collab.post('codex', body('proposal', { files: ['answer.js'] }));
+  // Checks run in a temporary checkout, so the handshake files live elsewhere.
+  const signals = await fs.mkdtemp(path.join(os.tmpdir(), 'model-collab-signals-'));
+  t.after(() => fs.rm(signals, { recursive: true, force: true }));
+  const started = path.join(signals, 'check.started'),
+    finish = path.join(signals, 'check.finish');
+  const script = `const fs=require("node:fs");fs.writeFileSync(${JSON.stringify(started)},"yes");const timer=setInterval(()=>{if(fs.existsSync(${JSON.stringify(finish)})){clearInterval(timer);process.exit(0)}},10);`;
+  const { collab } = await fixture(t, { checks: { unit: [process.execPath, '-e', script] } });
+  const first = await collab.post('codex', body('proposal'));
   const checking = assert.rejects(
     collab.verify('codex', first.message.id, 'unit'),
     /Shared context changed/,
   );
-  let started = false;
+  let running = false;
   try {
-    for (let attempt = 0; attempt < 100; attempt++) {
+    for (let attempt = 0; attempt < 200; attempt++) {
       try {
-        await fs.access(path.join(root, 'check.started'));
-        started = true;
+        await fs.access(started);
+        running = true;
         break;
       } catch (error) {
         if (error.code !== 'ENOENT') throw error;
       }
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    assert.ok(started, 'Check must be running before the note arrives');
+    assert.ok(running, 'Check must be running before the note arrives');
     await collab.note('Additional acceptance requirement arrived during verification.');
   } finally {
-    await fs.writeFile(path.join(root, 'check.finish'), 'yes');
+    await fs.writeFile(finish, 'yes');
   }
   await checking;
   assert.deepEqual((await collab.status()).session.checks, []);
 });
 
 test(
-  'awaitTurn ignores claim and verification revisions until the peer advances the round',
+  'awaitTurn ignores review and verification activity until the peer advances the round',
   { timeout: 5000 },
   async (t) => {
-    const { root, collab } = await fixture(t, {
+    const { collab } = await fixture(t, {
       checks: { unit: [process.execPath, '-e', 'process.exit(0)'] },
     });
-    await fs.writeFile(path.join(root, 'answer.js'), 'export default 42;');
-    const first = await collab.post('codex', body('proposal', { files: ['answer.js'] }));
+    const first = await collab.post('codex', body('proposal'));
     let settled = false;
     const waiting = collab.awaitTurn('codex', 2000).then((state) => {
       settled = true;
       return state;
     });
-    await collab.claim('claude', ['other.js']);
+    await collab.checkout('codex', first.message.id);
     await collab.verify('codex', first.message.id, 'unit');
     await new Promise((resolve) => setTimeout(resolve, 300));
     assert.equal(settled, false);
     await collab.post('claude', body());
     const result = await waiting;
     assert.equal(result.session.round, 1);
-    assert.equal(result.session.nextAction, 'contribute one evidence-led message');
+    assert.equal(result.session.nextAction, 'cross-examine the candidates, then send one message');
   },
 );
 
@@ -194,7 +193,10 @@ test(
         assert.equal(result.session.status, action === 'pause' ? 'paused' : 'stopped');
       else if (action === 'note') {
         assert.equal(result.session.contextVersion, 1);
-        assert.equal(result.session.nextAction, 'propose independently');
+        assert.equal(
+          result.session.nextAction,
+          'solve independently in your workspace, then propose',
+        );
       } else assert.equal(result.session.nextAction, 'wait');
     }
   },

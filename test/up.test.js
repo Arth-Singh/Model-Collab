@@ -9,6 +9,8 @@ import { execFile } from 'node:child_process';
 import { Collaboration } from '../src/core.js';
 import { planUp, startTmux, up, findTerminal } from '../src/up.js';
 import { runCommand } from '../src/process.js';
+import { initGit } from './helpers.js';
+import { renderStartup } from '../src/display.js';
 
 const execFileAsync = promisify(execFile);
 const cli = fileURLToPath(new URL('../bin/model-collab.js', import.meta.url));
@@ -22,6 +24,7 @@ async function fixture(t, unusual = false) {
     : path.join(base, 'project');
   await fs.mkdir(root);
   t.after(() => fs.rm(base, { recursive: true, force: true }));
+  await initGit(root);
   return { root, base };
 }
 
@@ -267,25 +270,29 @@ test(
           };
         return {
           kind: 'accept',
-          candidate: 'm1',
+          candidate: state.session.candidates.find((candidate) => candidate.agent !== agent).id,
           summary: 'Boundary example agrees.',
           evidence: ['[1,2) and [2,3) have empty intersection.'],
         };
       },
     });
-    assert.equal(turns.length, 4);
+    // The first acceptance converges; the other peer's round-one turn is cancelled.
+    assert.ok(turns.length >= 3 && turns.length <= 4);
+    assert.equal(result.status, 'converged');
+    assert.match(result.winner, /^m[12]$/);
+    assert.deepEqual(result.applied.files, []);
     assert.deepEqual(
       result.peers.map((peer) => peer.status),
       ['converged', 'converged'],
     );
-    assert.deepEqual(
-      result.peers.map((peer) => peer.calls),
-      [2, 2],
-    );
     const reported = events
       .filter((event) => ['message', 'sent'].includes(event.event))
       .map((event) => event.id);
-    assert.deepEqual(reported.toSorted(), ['m1', 'm2', 'm3', 'm4']);
+    assert.deepEqual(reported.toSorted(), ['m1', 'm2', 'm3']);
+    assert.match(
+      renderStartup(result),
+      /Collaboration converged[\s\S]*Agreed on m[12] and applied/,
+    );
     assert.equal(events.filter((event) => event.event === 'complete').length, 1);
   },
 );
@@ -361,3 +368,13 @@ test(
     }
   },
 );
+
+test('up refuses a project without Git before creating any files', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'model-collab-up-nogit-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  await assert.rejects(
+    up({ root, goal: 'Anything', ui: 'workers', turn: async () => ({}) }),
+    /needs a Git repository/,
+  );
+  assert.deepEqual(await fs.readdir(root), []);
+});

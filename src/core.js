@@ -4,13 +4,26 @@ import { createHash, randomUUID } from 'node:crypto';
 import lockfile from 'proper-lockfile';
 import { configSchema, messageSchema, startSchema } from './schema.js';
 import { runCommand } from './process.js';
+import {
+  applyCandidate,
+  candidateDiff,
+  captureBase,
+  createWorkspace,
+  materialize,
+  removeWorkspace,
+  repoInfo,
+  snapshotWorkspace,
+} from './workspace.js';
 
+const STATE_VERSION = 2;
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 const now = () => new Date().toISOString();
 const fail = (message) => {
   throw new Error(message);
 };
 const active = (s) => s?.status === 'active';
+const open = (s) => active(s) || s?.status === 'paused';
+const current = (m, s) => (m.contextVersion ?? 0) === (s.contextVersion ?? 0);
 
 async function atomicWrite(file, content) {
   const temp = `${file}.${randomUUID()}.tmp`;
@@ -35,9 +48,15 @@ export class Collaboration {
     this.file = path.join(this.dir, 'state.json');
   }
 
+  candidateFiles(id) {
+    return path.join(this.dir, 'candidates', id, 'files');
+  }
+
   async locked(fn) {
     await fs.mkdir(this.dir, { recursive: true });
-    const release = await lockfile.lock(this.dir, {
+    // The lock lives inside .collab so sandboxed agents granted only that
+    // directory can still run the CLI.
+    const release = await lockfile.lock(path.join(this.dir, 'state'), {
       realpath: false,
       retries: { retries: 25, minTimeout: 10, maxTimeout: 100 },
       stale: 10000,
@@ -58,11 +77,24 @@ export class Collaboration {
       } catch (e) {
         if (e.code !== 'ENOENT') throw e;
       }
-      const state = { schemaVersion: 1, revision: 0, config, session: null };
+      const state = { schemaVersion: STATE_VERSION, revision: 0, config, session: null };
       await atomicWrite(this.file, JSON.stringify(state, null, 2) + '\n');
       await this.publishViews(state);
       return state;
     });
+  }
+
+  // Version 1 sessions edited one shared tree and cannot continue in worktrees.
+  migrate(state) {
+    if (state.schemaVersion === STATE_VERSION) return;
+    if (state.schemaVersion !== 1) fail('Unsupported state version.');
+    state.schemaVersion = STATE_VERSION;
+    const s = state.session;
+    if (!s) return;
+    delete s.claims;
+    s.candidates = s.candidates.map(({ files, ...candidate }) => ({ ...candidate, changes: [] }));
+    if (open(s))
+      this.stopSession(s, 'stopped', 'Model Collab was upgraded; start this goal again.');
   }
 
   async transaction(fn) {
@@ -74,8 +106,8 @@ export class Collaboration {
         if (e.code === 'ENOENT') fail('Run model-collab init first.');
         throw e;
       }
-      if (state.schemaVersion !== 1) fail('Unsupported state version.');
       const before = JSON.stringify(state);
+      this.migrate(state);
       this.expire(state);
       let result, error;
       try {
@@ -99,14 +131,12 @@ export class Collaboration {
     const s = state.session;
     if (active(s) && Date.now() >= Date.parse(s.deadlineAt))
       this.stopSession(s, 'exhausted', 'deadline');
-    if (s) s.claims = s.claims.filter((c) => c.expiresAt > Date.now());
   }
 
   stopSession(s, status, reason) {
     s.status = status;
     s.stopReason = reason;
     s.endedAt = now();
-    s.claims = [];
   }
   requireAgent(state, agent) {
     if (!state.config.participants.includes(agent)) fail(`Unknown participant: ${agent}`);
@@ -119,11 +149,23 @@ export class Collaboration {
     return state.session;
   }
 
+  async removeWorkspaces() {
+    const work = path.join(this.dir, 'work');
+    const names = await fs.readdir(work).catch((e) => {
+      if (e.code === 'ENOENT') return [];
+      throw e;
+    });
+    if (!names.length) return;
+    const { top } = await repoInfo(this.root);
+    for (const name of names) await removeWorkspace(top, path.join(work, name));
+  }
+
   async start(input) {
     const parsed = startSchema.parse(input);
     return this.transaction(async (state) => {
-      if (active(state.session) || state.session?.status === 'paused')
+      if (open(state.session))
         fail('A session is already active or paused. Stop it before starting another.');
+      const base = await captureBase(this.root, path.join(this.dir, 'tmp'));
       if (state.session) {
         await fs.mkdir(path.join(this.dir, 'history'), { recursive: true });
         await atomicWrite(
@@ -131,6 +173,12 @@ export class Collaboration {
           JSON.stringify(state.session, null, 2) + '\n',
         );
       }
+      await this.removeWorkspaces();
+      for (const name of ['candidates', 'review', 'checkouts'])
+        await fs.rm(path.join(this.dir, name), { recursive: true, force: true });
+      const workspaces = {};
+      for (const agent of state.config.participants)
+        workspaces[agent] = await createWorkspace(base, path.join(this.dir, 'work', agent));
       state.session = {
         id: randomUUID(),
         ...parsed,
@@ -140,14 +188,16 @@ export class Collaboration {
         phase: 'independent',
         round: 0,
         contextVersion: 0,
+        base,
+        workspaces,
         humanNotes: [],
         messages: [],
         candidates: [],
         votes: {},
         challenges: [],
         checks: [],
-        claims: [],
         winner: null,
+        applied: null,
       };
       return state;
     });
@@ -159,31 +209,28 @@ export class Collaboration {
       const view = structuredClone(state),
         s = view.session;
       if (!s) return view;
-      // Replay hashes are internal bookkeeping; peers only need the content.
-      if (agent) s.messages = s.messages.map(({ fingerprint, semantic, ...message }) => message);
       s.roundsRemaining = Math.max(0, state.config.maxRounds - s.round);
-      if (agent && s.phase === 'independent' && (active(s) || s.status === 'paused')) {
+      if (agent) {
+        // Replay hashes are internal bookkeeping; peers only need the content.
+        s.messages = s.messages.map(({ fingerprint, semantic, ...message }) => message);
+        s.workspace = s.workspaces?.[agent];
+        delete s.workspaces;
+        delete s.base;
+      }
+      if (agent && s.phase === 'independent' && open(s)) {
         s.messages = s.messages.filter((m) => m.agent === agent);
         s.candidates = s.candidates.filter((c) => c.agent === agent);
         s.independentPeersPending = state.config.participants.filter(
-          (p) =>
-            !state.session.messages.some(
-              (m) => m.agent === p && (m.contextVersion ?? 0) === (s.contextVersion ?? 0),
-            ),
+          (p) => !state.session.messages.some((m) => m.agent === p && current(m, s)),
         );
       }
       s.nextAction = !active(s)
         ? 'stop'
-        : s.messages.some(
-              (m) =>
-                m.agent === agent &&
-                m.round === s.round &&
-                (m.contextVersion ?? 0) === (s.contextVersion ?? 0),
-            )
+        : s.messages.some((m) => m.agent === agent && m.round === s.round && current(m, s))
           ? 'wait'
           : s.phase === 'independent'
-            ? 'propose independently'
-            : 'contribute one evidence-led message';
+            ? 'solve independently in your workspace, then propose'
+            : 'cross-examine the candidates, then send one message';
       return view;
     });
   }
@@ -199,75 +246,43 @@ export class Collaboration {
     ]);
     if (Object.keys(changes).some((key) => !allowed.has(key))) fail('Unsupported project setting.');
     return this.transaction((state) => {
-      if (active(state.session) || state.session?.status === 'paused') {
+      if (open(state.session))
         fail('Stop the current collaboration before changing project settings.');
-      }
-      const config = configSchema.parse({ ...state.config, ...changes });
-      state.config = config;
+      state.config = configSchema.parse({ ...state.config, ...changes });
       return state;
     });
   }
 
-  async safePath(relative, allowMissing = false) {
-    if (
-      path.isAbsolute(relative) ||
-      relative.split(/[\\/]/).includes('..') ||
-      relative.includes('\\')
-    )
-      fail('Paths must be relative and stay inside the repository.');
-    const normalized = path.normalize(relative);
-    if (
-      normalized === '.' ||
-      normalized.startsWith('.collab') ||
-      normalized.split('/').includes('.git')
-    )
-      fail('Cannot claim or snapshot collaboration state or Git metadata.');
-    const root = await fs.realpath(this.root);
-    const full = path.join(root, normalized);
-    let cursor = full,
-      canonical;
-    while (true) {
-      try {
-        const resolved = await fs.realpath(cursor);
-        if (resolved !== root && !resolved.startsWith(root + path.sep))
-          fail('Symlink escapes repository.');
-        canonical = path.join(resolved, path.relative(cursor, full));
-        break;
-      } catch (e) {
-        if (!allowMissing || e.code !== 'ENOENT' || cursor === root) throw e;
-        cursor = path.dirname(cursor);
-      }
-    }
-    const canonicalRelative = path.relative(root, canonical);
-    if (
-      !canonicalRelative ||
-      canonicalRelative === '.collab' ||
-      canonicalRelative.startsWith('.collab/') ||
-      canonicalRelative.split('/').includes('.git')
-    )
-      fail('Cannot claim or snapshot the root, collaboration state, or Git metadata.');
-    return { full: canonical, relative: canonicalRelative };
+  // During the independent phase a peer may only inspect its own candidates.
+  visibleCandidate(state, agent, candidateId) {
+    this.requireAgent(state, agent);
+    const s = state.session;
+    if (!s) fail('No session. Start a goal first.');
+    const candidate = s.candidates.find((c) => c.id === candidateId);
+    if (!candidate || (s.phase === 'independent' && open(s) && candidate.agent !== agent))
+      fail('Unknown candidate.');
+    return candidate;
   }
 
-  async snapshot(files) {
-    const result = [];
-    for (const file of [...new Set(files)].sort()) {
-      const p = await this.safePath(file);
-      const info = await fs.stat(p.full);
-      if (!info.isFile() || info.size > 10 * 1024 * 1024)
-        fail(`Not a regular file under 10 MiB: ${file}`);
-      result.push({ path: p.relative, sha256: hash(await fs.readFile(p.full)) });
-    }
-    return [...new Map(result.map((item) => [item.path, item])).values()].sort((a, b) =>
-      a.path.localeCompare(b.path),
+  converged(state, candidateId) {
+    const s = state.session;
+    const candidate = s.candidates.find((c) => c.id === candidateId);
+    if (!candidate || candidate.supersededBy) return false;
+    if (!state.config.participants.every((p) => s.votes[p] === candidateId)) return false;
+    if (s.challenges.some((c) => c.candidate === candidateId && !c.resolvedBy)) return false;
+    return Object.keys(state.config.checks).every((name) =>
+      s.checks.some((c) => c.candidate === candidateId && c.name === name && c.passed),
     );
   }
 
-  async assertFresh(candidate) {
-    if (candidate.supersededBy) fail(`Candidate superseded by ${candidate.supersededBy}.`);
-    const current = await this.snapshot(candidate.files.map((f) => f.path));
-    if (JSON.stringify(current) !== JSON.stringify(candidate.files))
-      fail('Candidate files changed. Publish a new proposal before accepting or verifying.');
+  async applyWinner(s, candidateId) {
+    const candidate = s.candidates.find((c) => c.id === candidateId);
+    try {
+      const files = await applyCandidate(s.base, candidate, this.candidateFiles(candidate.id));
+      s.applied = { candidate: candidate.id, files, timestamp: now() };
+    } catch (error) {
+      s.applied = { candidate: candidate.id, error: error.message, timestamp: now() };
+    }
   }
 
   async post(agent, input, { sessionId } = {}) {
@@ -291,15 +306,8 @@ export class Collaboration {
         fail(
           'Shared context changed. Read status and acknowledge its contextVersion before contributing.',
         );
-      if (
-        s.messages.some(
-          (m) =>
-            m.agent === agent &&
-            m.round === s.round &&
-            (m.contextVersion ?? 0) === (s.contextVersion ?? 0),
-        )
-      )
-        fail('You already contributed this round. Wait for peers; do not ping-pong.');
+      if (s.messages.some((m) => m.agent === agent && m.round === s.round && current(m, s)))
+        fail('You already contributed this round. Wait for your peer.');
       if (s.phase === 'independent' && !['proposal', 'blocked'].includes(body.kind))
         fail('First submit an independent proposal.');
       if (body.kind !== 'blocked' && !body.evidence.length)
@@ -308,12 +316,14 @@ export class Collaboration {
         );
       if (body.kind === 'proposal' && body.candidate)
         fail('A proposal creates its own candidate ID; omit candidate.');
-      if (body.kind !== 'proposal' && (body.solution !== undefined || body.files.length))
-        fail('Only proposals carry a solution or files.');
+      if (body.kind !== 'proposal' && body.solution !== undefined)
+        fail('Only proposals carry a solution.');
       const candidate = body.candidate && s.candidates.find((c) => c.id === body.candidate);
       if (body.candidate && !candidate) fail('Unknown candidate.');
       if (['accept', 'challenge'].includes(body.kind) && !candidate)
         fail('This message requires a candidate ID.');
+      if (candidate?.supersededBy)
+        fail(`Candidate ${candidate.id} was superseded by ${candidate.supersededBy}.`);
       if (body.repliesTo && !s.messages.some((m) => m.id === body.repliesTo))
         fail('Unknown repliesTo message.');
       const resolving = body.resolves.map((id) => {
@@ -324,98 +334,136 @@ export class Collaboration {
       });
       if (s.phase === 'independent' && (body.repliesTo || body.resolves.length))
         fail('Independent proposals cannot reference peers.');
-      if (candidate) await this.assertFresh(candidate);
       if (body.kind === 'accept') {
-        const open = s.challenges.filter(
+        const blocking = s.challenges.filter(
           (c) => c.candidate === candidate.id && !c.resolvedBy && !body.resolves.includes(c.id),
         );
-        if (open.length) fail('Resolve open challenges before accepting this candidate.');
+        if (blocking.length)
+          fail(
+            `Resolve open challenges before accepting this candidate: ${blocking.map((c) => c.id).join(', ')}.`,
+          );
         const missing = Object.keys(state.config.checks).filter(
           (name) =>
             !s.checks.some((c) => c.candidate === candidate.id && c.name === name && c.passed),
         );
-        if (missing.length) fail(`Required checks have not passed: ${missing.join(', ')}`);
+        if (missing.length)
+          fail(
+            `Required checks have not passed on ${candidate.id}: ${missing.join(', ')}. Run collab_verify first.`,
+          );
       }
-      const files = body.kind === 'proposal' ? await this.snapshot(body.files) : [];
-      const semantic = hash(JSON.stringify({ ...body, clientMessageId: undefined, files }));
-      if (
-        body.kind !== 'accept' &&
-        s.messages.some((m) => m.agent === agent && m.semantic === semantic)
-      )
-        fail('Repeated contribution adds no new evidence. Wait or provide a new check.');
-      if (body.kind === 'accept' && s.votes[agent] === candidate.id)
-        fail('You already accepted this candidate. Wait for peers.');
       const id = `m${s.messages.length + 1}`;
-      const message = {
-        ...body,
-        id,
-        agent,
-        contextVersion: s.contextVersion ?? 0,
-        round: s.round,
-        timestamp: now(),
-        fingerprint,
-        semantic,
-      };
-      if (body.kind === 'proposal') {
-        for (const old of s.candidates.filter((c) => c.agent === agent && !c.supersededBy))
-          old.supersededBy = id;
-        s.candidates.push({
-          id,
-          agent,
-          summary: body.summary,
-          solution: body.solution ?? '',
-          files,
-          createdAt: message.timestamp,
-        });
-        s.votes = {};
-      } else if (body.kind === 'challenge') {
-        s.challenges.push({
-          id,
-          agent,
-          candidate: candidate.id,
-          summary: body.summary,
-          resolvedBy: null,
-        });
-        s.votes = {};
-      } else if (body.kind === 'accept') {
-        s.votes[agent] = candidate.id;
-      } else {
-        delete s.votes[agent];
-      }
-      for (const challenge of resolving) challenge.resolvedBy = id;
-      s.messages.push(message);
-      if (body.kind === 'blocked') this.stopSession(s, 'blocked', body.summary);
-      else if (
-        state.config.participants.every((p) => s.votes[p] && s.votes[p] === s.votes[agent])
-      ) {
-        s.winner = s.votes[agent];
-        this.stopSession(s, 'converged', 'unanimous_acceptance');
-      } else if (s.messages.length >= state.config.maxMessages)
-        this.stopSession(s, 'exhausted', 'message_limit');
-      else if (
-        state.config.participants.every((p) =>
-          s.messages.some(
-            (m) =>
-              m.agent === p &&
-              m.round === s.round &&
-              (m.contextVersion ?? 0) === (s.contextVersion ?? 0),
-          ),
-        )
-      ) {
-        if (s.round >= state.config.maxRounds) this.stopSession(s, 'exhausted', 'round_limit');
-        else {
-          s.round++;
-          s.phase = 'discussion';
+      let changes = [];
+      const pending = path.join(this.dir, 'candidates', `.pending-${randomUUID()}`);
+      try {
+        if (body.kind === 'proposal') {
+          const workspace = path.join(this.dir, 'work', agent);
+          changes = await snapshotWorkspace(s.base, workspace, pending);
+          if (!changes.length && !body.solution?.trim())
+            fail(
+              'A proposal needs changed files in your workspace or a written solution. Your workspace has no changes.',
+            );
         }
+        const semantic = hash(JSON.stringify({ ...body, clientMessageId: undefined, changes }));
+        if (
+          body.kind !== 'accept' &&
+          s.messages.some((m) => m.agent === agent && m.semantic === semantic)
+        )
+          fail('Repeated contribution adds no new evidence. Wait or provide a new check.');
+        if (body.kind === 'proposal') {
+          await fs.mkdir(path.dirname(this.candidateFiles(id)), { recursive: true });
+          await fs.rm(this.candidateFiles(id), { recursive: true, force: true });
+          await fs.mkdir(pending, { recursive: true });
+          await fs.rename(pending, this.candidateFiles(id));
+        }
+        const message = {
+          ...body,
+          id,
+          agent,
+          contextVersion: s.contextVersion ?? 0,
+          round: s.round,
+          timestamp: now(),
+          fingerprint,
+          semantic,
+        };
+        if (body.kind === 'proposal') {
+          for (const old of s.candidates.filter((c) => c.agent === agent && !c.supersededBy)) {
+            old.supersededBy = id;
+            for (const [peer, vote] of Object.entries(s.votes))
+              if (vote === old.id) delete s.votes[peer];
+          }
+          s.candidates.push({
+            id,
+            agent,
+            summary: body.summary,
+            solution: body.solution ?? '',
+            changes,
+            createdAt: message.timestamp,
+          });
+          // Proposing is endorsing: the author's vote goes to its own candidate.
+          s.votes[agent] = id;
+        } else if (body.kind === 'challenge') {
+          s.challenges.push({
+            id,
+            agent,
+            candidate: candidate.id,
+            summary: body.summary,
+            resolvedBy: null,
+          });
+        } else if (body.kind === 'accept') {
+          s.votes[agent] = candidate.id;
+        }
+        for (const challenge of resolving) challenge.resolvedBy = id;
+        s.messages.push(message);
+        const agreed = s.candidates.find((c) => !c.supersededBy && this.converged(state, c.id));
+        if (body.kind === 'blocked') this.stopSession(s, 'blocked', body.summary);
+        else if (agreed) {
+          s.winner = agreed.id;
+          this.stopSession(s, 'converged', 'unanimous_acceptance');
+          await this.applyWinner(s, agreed.id);
+        } else if (s.messages.length >= state.config.maxMessages)
+          this.stopSession(s, 'exhausted', 'message_limit');
+        else if (
+          state.config.participants.every((p) =>
+            s.messages.some((m) => m.agent === p && m.round === s.round && current(m, s)),
+          )
+        ) {
+          if (s.round >= state.config.maxRounds) this.stopSession(s, 'exhausted', 'round_limit');
+          else {
+            s.round++;
+            s.phase = 'discussion';
+          }
+        }
+        return {
+          message,
+          status: s.status,
+          round: s.round,
+          winner: s.winner,
+          applied: s.applied,
+          duplicate: false,
+        };
+      } finally {
+        await fs.rm(pending, { recursive: true, force: true });
       }
-      return { message, status: s.status, round: s.round, winner: s.winner, duplicate: false };
+    });
+  }
+
+  async apply(candidateId) {
+    return this.transaction(async (state) => {
+      const s = state.session;
+      if (!s) fail('No session to apply.');
+      if (open(s)) fail('Stop the collaboration before applying a candidate yourself.');
+      const id = candidateId ?? s.winner;
+      if (!id) fail('No agreed candidate. Pass --candidate to apply one of the alternatives.');
+      if (!s.candidates.some((c) => c.id === id)) fail('Unknown candidate.');
+      await this.applyWinner(s, id);
+      if (s.applied.error) fail(s.applied.error);
+      return s.applied;
     });
   }
 
   async stop(reason = 'Stopped by user') {
     return this.transaction((state) => {
-      if (!active(state.session) && state.session?.status !== 'paused')
-        fail('No active or paused session to stop.');
+      if (!open(state.session)) fail('No active or paused session to stop.');
       this.stopSession(state.session, 'stopped', reason);
       return state;
     });
@@ -426,7 +474,6 @@ export class Collaboration {
       const s = this.requireActive(state);
       s.status = 'paused';
       s.pausedAt = now();
-      s.claims = [];
       return state;
     });
   }
@@ -449,7 +496,7 @@ export class Collaboration {
       fail('A user note must contain 1–4000 characters.');
     return this.transaction((state) => {
       const s = state.session;
-      if (!active(s) && s?.status !== 'paused') fail('Notes require an active or paused session.');
+      if (!open(s)) fail('Notes require an active or paused session.');
       if ((s.humanNotes?.length ?? 0) >= 20)
         fail('User-note limit reached. Start a fresh goal for more context.');
       s.contextVersion = (s.contextVersion ?? 0) + 1;
@@ -461,89 +508,72 @@ export class Collaboration {
     });
   }
 
-  async claim(agent, files, leaseSeconds = 300) {
-    if (
-      !Array.isArray(files) ||
-      !files.length ||
-      files.length > 50 ||
-      !Number.isInteger(leaseSeconds) ||
-      leaseSeconds < 1 ||
-      leaseSeconds > 1800
-    )
-      fail('Claim 1–50 file paths for 1–1800 seconds.');
-    const paths = await Promise.all(
-      files.map((f) => this.safePath(f, true).then((p) => p.relative)),
-    );
-    return this.transaction((state) => {
-      this.requireAgent(state, agent);
-      const s = this.requireActive(state);
-      const overlaps = (a, b) => a === b || a.startsWith(b + '/') || b.startsWith(a + '/');
-      const conflict = s.claims.find(
-        (c) => c.agent !== agent && paths.some((p) => overlaps(c.path, p)),
-      );
-      if (conflict) fail(`${conflict.path} is claimed by ${conflict.agent}.`);
-      const expiresAt = Date.now() + leaseSeconds * 1000;
-      for (const file of new Set(paths)) {
-        s.claims = s.claims.filter((c) => !(c.agent === agent && c.path === file));
-        s.claims.push({ agent, path: file, expiresAt });
-      }
-      return s.claims.filter((c) => c.agent === agent);
-    });
+  /** A runnable copy of a candidate for review: the base plus the candidate's changes. */
+  async checkout(agent, candidateId) {
+    const { base, candidate } = await this.transaction((state) => ({
+      base: state.session?.base,
+      candidate: this.visibleCandidate(state, agent, candidateId),
+    }));
+    const dir = path.join(this.dir, 'review', agent, candidate.id);
+    const cwd = await materialize(base, candidate, this.candidateFiles(candidate.id), dir);
+    return { candidate: candidate.id, path: cwd, changes: candidate.changes };
   }
 
-  async release(agent, files = []) {
-    const canonical = await Promise.all(
-      files.map((f) => this.safePath(f, true).then((p) => p.relative)),
-    );
-    return this.transaction((state) => {
-      this.requireAgent(state, agent);
-      if (state.session)
-        state.session.claims = state.session.claims.filter(
-          (c) => c.agent !== agent || (canonical.length && !canonical.includes(c.path)),
-        );
-      return { released: true };
-    });
+  async diff(agent, candidateId) {
+    const { base, candidate } = await this.transaction((state) => ({
+      base: state.session?.base,
+      candidate: this.visibleCandidate(state, agent, candidateId),
+    }));
+    const scratch = path.join(this.dir, 'tmp', `diff-${randomUUID()}`);
+    const text = await candidateDiff(base, candidate, this.candidateFiles(candidate.id), scratch);
+    return {
+      candidate: candidate.id,
+      diff: text.length > 200000 ? text.slice(0, 200000) + '\n[diff truncated]\n' : text,
+    };
   }
 
   async verify(agent, candidateId, name) {
     const captured = await this.transaction(async (state) => {
-      this.requireAgent(state, agent);
       const s = this.requireActive(state);
-      const candidate = s.candidates.find((c) => c.id === candidateId);
-      if (!candidate) fail('Unknown candidate.');
+      const candidate = this.visibleCandidate(state, agent, candidateId);
       if (!Object.hasOwn(state.config.checks, name))
         fail('Unknown check. Checks must be configured by the user at initialization.');
-      const argv = state.config.checks[name];
-      if (!candidate.files.length)
-        fail(
-          'Verification requires a file-backed proposal. Include all relevant source and test files.',
-        );
-      await this.assertFresh(candidate);
       return {
         session: s.id,
         contextVersion: s.contextVersion ?? 0,
+        base: s.base,
         candidate,
-        argv,
+        argv: state.config.checks[name],
         // Projects initialized before checkTimeoutSeconds existed keep the default.
         timeoutMs: (state.config.checkTimeoutSeconds ?? 300) * 1000,
         deadline: s.deadlineAt,
       };
     });
-    const result = await runCommand(captured.argv, {
-      cwd: this.root,
-      timeoutMs: Math.max(
-        1,
-        Math.min(captured.timeoutMs, Date.parse(captured.deadline) - Date.now()),
-      ),
-      maxBytes: 12000,
-    });
+    const dir = path.join(this.dir, 'checkouts', `${candidateId}-${randomUUID()}`);
+    let result;
+    try {
+      const cwd = await materialize(
+        captured.base,
+        captured.candidate,
+        this.candidateFiles(captured.candidate.id),
+        dir,
+      );
+      result = await runCommand(captured.argv, {
+        cwd,
+        timeoutMs: Math.max(
+          1,
+          Math.min(captured.timeoutMs, Date.parse(captured.deadline) - Date.now()),
+        ),
+        maxBytes: 12000,
+      });
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
     return this.transaction(async (state) => {
       const s = this.requireActive(state);
       if (s.id !== captured.session) fail('Session changed while check was running.');
       if ((s.contextVersion ?? 0) !== captured.contextVersion)
         fail('Shared context changed while check was running. Run the check again.');
-      const candidate = s.candidates.find((c) => c.id === candidateId);
-      await this.assertFresh(candidate);
       const record = {
         candidate: candidateId,
         name,
@@ -605,15 +635,26 @@ export class Collaboration {
         ? ''
         : '# Model Collab\n\nNo active goal. Start one with `model-collab start`.\n';
     if (format === 'jsonl') return s.messages.map((m) => JSON.stringify(m)).join('\n') + '\n';
+    const changed = (id) => {
+      const candidate = s.candidates.find((c) => c.id === id);
+      return candidate?.changes?.length
+        ? `\nChanged files: ${candidate.changes.map((c) => `\`${c.path}\` (${c.status})`).join(', ')}.\n`
+        : '';
+    };
+    const applied = s.applied
+      ? s.applied.error
+        ? `Applying ${s.applied.candidate} failed: ${s.applied.error}\n\n`
+        : `Applied ${s.applied.candidate} to the working tree: ${s.applied.files.join(', ') || 'no file changes'}.\n\n`
+      : '';
     return (
-      `# Collaboration: ${s.topic}\n\nStatus: **${s.status}**. Reason: ${s.stopReason ?? 'in progress'}. Round: ${s.round}. Revision: ${state.revision}.\n\nThis README is a generated transcript. Send messages through MCP or the CLI; do not edit this file. Canonical JSON: state.json. Message stream: messages.jsonl. Shared context: CONTEXT.md.\n\n` +
+      `# Collaboration: ${s.topic}\n\nStatus: **${s.status}**. Reason: ${s.stopReason ?? 'in progress'}. Round: ${s.round}. Revision: ${state.revision}.${s.winner ? ` Agreed candidate: ${s.winner}.` : ''}\n\n${applied}This README is a generated transcript. Send messages through MCP or the CLI; do not edit this file. Canonical JSON: state.json. Message stream: messages.jsonl. Shared context: CONTEXT.md.\n\n` +
       (s.humanNotes ?? [])
         .map((n) => `## User note · context ${n.contextVersion}\n\n${n.text}\n\n`)
         .join('') +
       s.messages
         .map(
           (m) =>
-            `## ${m.id} · ${m.agent} · ${m.kind} · round ${m.round}\n\n${m.summary}\n${m.candidate ? `\nCandidate: ${m.candidate}.\n` : ''}\n${m.evidence.map((e) => `- ${e}`).join('\n')}\n${m.solution ? `\n\`\`\`text\n${m.solution}\n\`\`\`\n` : ''}`,
+            `## ${m.id} · ${m.agent} · ${m.kind} · round ${m.round}\n\n${m.summary}\n${m.candidate ? `\nCandidate: ${m.candidate}.\n` : ''}${m.kind === 'proposal' ? changed(m.id) : ''}\n${m.evidence.map((e) => `- ${e}`).join('\n')}\n${m.solution ? `\n\`\`\`text\n${m.solution}\n\`\`\`\n` : ''}`,
         )
         .join('\n')
     );

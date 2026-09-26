@@ -82,23 +82,34 @@ export async function writeInstructions(root, participants, { preset = 'coding' 
     );
 }
 
-export async function launch(root, agent, { model, effort = DEFAULT_EFFORT, print = false } = {}) {
+export async function launch(
+  root,
+  agent,
+  { model, effort = DEFAULT_EFFORT, print = false, workspace } = {},
+) {
   if (!['codex', 'claude'].includes(agent))
     throw new Error(
       'Launch supports codex or claude; other participants may connect through serve.',
     );
-  const prompt = `Stay in this visible interactive session. Read .collab/START-${agent.toUpperCase()}.md and .collab/CONTEXT.md, then follow those instructions to collaborate as ${agent}. Do not launch background workers. The user can interrupt or steer you in this pane.`;
+  if (!workspace) throw new Error(`No workspace for ${agent}. Start a goal with model-collab up.`);
+  const collabDir = path.join(path.resolve(root), '.collab');
+  const startFile = path.join(collabDir, `START-${agent.toUpperCase()}.md`);
+  const prompt = `Stay in this visible interactive session. Your private workspace is ${workspace} (the current directory). Read ${startFile} and ${path.join(collabDir, 'CONTEXT.md')}, then follow those instructions to collaborate as ${agent}. Do not launch background workers. The user can interrupt or steer you in this pane.`;
   const config = serverConfig(root, agent, { contract: false });
-  const interactiveInstructions = await fs.readFile(
-    path.join(root, '.collab', `START-${agent.toUpperCase()}.md`),
-    'utf8',
-  );
+  const interactiveInstructions = await fs.readFile(startFile, 'utf8');
   const command = agent;
+  // The agent works in its workspace; .collab is added so the CLI can record messages.
   const args =
     agent === 'codex'
       ? [
           '-C',
-          path.resolve(root),
+          workspace,
+          // A new worktree is untrusted, which would make Codex read-only there.
+          // workspace-write matches Codex's default for a trusted project.
+          '--sandbox',
+          'workspace-write',
+          '--add-dir',
+          collabDir,
           '-m',
           model ?? DEFAULT_MODELS.codex,
           '-c',
@@ -116,14 +127,16 @@ export async function launch(root, agent, { model, effort = DEFAULT_EFFORT, prin
           model ?? DEFAULT_MODELS.claude,
           '--effort',
           effort,
+          '--add-dir',
+          collabDir,
           '--mcp-config',
           JSON.stringify({ mcpServers: { model_collab: config } }),
           '--append-system-prompt',
           interactiveInstructions,
           prompt,
         ];
-  if (print) return { command, args, cwd: path.resolve(root) };
-  const child = spawn(command, args, { cwd: root, stdio: 'inherit', shell: false });
+  if (print) return { command, args, cwd: workspace };
+  const child = spawn(command, args, { cwd: workspace, stdio: 'inherit', shell: false });
   return new Promise((resolve, reject) => {
     child.on('error', reject);
     child.on('exit', (code, signal) => resolve({ exitCode: code ?? 1, signal }));

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { Collaboration } from '../src/core.js';
+import { gitProject } from './helpers.js';
 
 const cli = fileURLToPath(new URL('../bin/model-collab.js', import.meta.url));
 const decoded = (result) => {
@@ -15,12 +16,9 @@ const decoded = (result) => {
 };
 
 test('two real MCP clients exchange sealed proposals and converge with fixed participant identities', async (t) => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'model-collab-mcp-'));
+  const root = await gitProject(t, 'model-collab-mcp-');
   const clients = [];
-  t.after(async () => {
-    await Promise.all(clients.map((client) => client.close()));
-    await fs.rm(root, { recursive: true, force: true });
-  });
+  t.after(() => Promise.all(clients.map((client) => client.close())));
   await new Collaboration(root).init();
   for (const agent of ['codex', 'claude']) {
     const client = new Client({ name: `test-${agent}`, version: '1.0.0' });
@@ -37,9 +35,9 @@ test('two real MCP clients exchange sealed proposals and converge with fixed par
   const [codex, claude] = clients;
   const tools = (await codex.listTools()).tools.map((tool) => tool.name);
   assert.deepEqual(tools.sort(), [
-    'collab_claim',
+    'collab_checkout',
+    'collab_diff',
     'collab_post',
-    'collab_release',
     'collab_start',
     'collab_status',
     'collab_stop',
@@ -90,6 +88,7 @@ test('two real MCP clients exchange sealed proposals and converge with fixed par
         kind: 'proposal',
         summary: 'Use nonempty intersection',
         evidence: ['[1,2) intersects [2,3) in the empty set.'],
+        solution: 'The intersection [max(start), min(end)) is nonempty.',
       },
     }),
   );
@@ -98,24 +97,23 @@ test('two real MCP clients exchange sealed proposals and converge with fixed par
     shared.session.messages.map((message) => message.agent),
     ['codex', 'claude'],
   );
-  for (const [client, agent] of [
-    [codex, 'codex'],
-    [claude, 'claude'],
-  ]) {
-    decoded(
-      await client.callTool({
-        name: 'collab_post',
-        arguments: {
-          sessionId,
-          clientMessageId: `mcp-${agent}-acceptance`,
-          kind: 'accept',
-          candidate: first.message.id,
-          summary: 'Boundary examples agree',
-          evidence: ['[1,2) and [2,3) do not overlap under strict inequality.'],
-        },
-      }),
-    );
-  }
+  const review = decoded(
+    await claude.callTool({ name: 'collab_checkout', arguments: { candidate: first.message.id } }),
+  );
+  assert.ok(review.path.startsWith(path.join(root, '.collab', 'review', 'claude')));
+  decoded(
+    await claude.callTool({
+      name: 'collab_post',
+      arguments: {
+        sessionId,
+        clientMessageId: 'mcp-claude-acceptance',
+        kind: 'accept',
+        candidate: first.message.id,
+        summary: 'Boundary examples agree',
+        evidence: ['[1,2) and [2,3) do not overlap under strict inequality.'],
+      },
+    }),
+  );
   const final = decoded(await claude.callTool({ name: 'collab_status', arguments: {} }));
   assert.equal(final.session.status, 'converged');
   assert.equal(final.session.winner, first.message.id);
@@ -123,13 +121,10 @@ test('two real MCP clients exchange sealed proposals and converge with fixed par
 });
 
 test('MCP requires an observed session ID and rejects stale proposals and votes after replacement', async (t) => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'model-collab-mcp-session-'));
+  const root = await gitProject(t, 'model-collab-mcp-session-');
   const collab = new Collaboration(root);
   const client = new Client({ name: 'test-session-binding', version: '1.0.0' });
-  t.after(async () => {
-    await client.close();
-    await fs.rm(root, { recursive: true, force: true });
-  });
+  t.after(() => client.close());
   await collab.init();
   const started = await collab.start({ topic: 'Goal A' });
   const sessionId = started.session.id;
@@ -150,6 +145,7 @@ test('MCP requires an observed session ID and rejects stale proposals and votes 
     kind: 'proposal',
     summary: 'A candidate for the observed goal.',
     evidence: ['Reviewed that goal.'],
+    solution: 'Written answer for the observed goal.',
   };
   const post = (args) => client.callTool({ name: 'collab_post', arguments: args });
   const beforeInvalid = await fs.readFile(collab.file, 'utf8');

@@ -8,6 +8,7 @@ import { configSchema, startSchema, sessionIdSchema } from './schema.js';
 import { binPath, writeInstructions } from './setup.js';
 import { runCommand } from './process.js';
 import { runWorker, DEFAULT_TURN_TIMEOUT_MS } from './worker.js';
+import { repoInfo } from './workspace.js';
 import { DEFAULT_EFFORT, DEFAULT_MODELS } from './native.js';
 
 const SOCKET = 'model-collab';
@@ -25,7 +26,7 @@ export async function planUp({
   effort = DEFAULT_EFFORT,
   checks,
   minutes = 30,
-  maxRounds = 4,
+  maxRounds = 3,
   maxMessages = 24,
   checkTimeoutSeconds,
   criteria = [],
@@ -39,7 +40,8 @@ export async function planUp({
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
-  if (existing && existing.schemaVersion !== 1) throw new Error('Unsupported state version.');
+  if (existing && ![1, 2].includes(existing.schemaVersion))
+    throw new Error('Unsupported state version.');
   const config = existing
     ? configSchema.parse(existing.config)
     : configSchema.parse({
@@ -214,6 +216,8 @@ export async function up(options = {}) {
         );
     }
   }
+  // Each agent needs its own worktree; fail before creating any project files.
+  await repoInfo(preview.root);
   // A separate lock serializes startup across init, goal creation, and pane launch.
   const directory = path.join(preview.root, '.collab');
   await fs.mkdir(directory, { recursive: true });
@@ -304,7 +308,15 @@ export async function up(options = {}) {
       const failed = outcomes.find((outcome) => outcome.status === 'rejected');
       if (failed) throw failed.reason;
       const peers = outcomes.map((outcome) => outcome.value);
-      return { ...result, peers };
+      const final = (await new Collaboration(plan.root).status()).session;
+      return {
+        ...result,
+        peers,
+        status: final.status,
+        reason: final.stopReason,
+        winner: final.winner,
+        applied: final.applied,
+      };
     } finally {
       controller.abort();
       options.signal?.removeEventListener('abort', abort);

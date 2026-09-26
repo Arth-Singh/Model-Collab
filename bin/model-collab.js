@@ -48,7 +48,7 @@ withRepo(
   .option('--json', 'Print structured startup information and worker events')
   .option('--resume', 'Explicitly resume the same paused goal')
   .option('--minutes <n>', 'New-project session deadline', Number, 30)
-  .option('--max-rounds <n>', 'New-project discussion round cap', Number, 4)
+  .option('--max-rounds <n>', 'New-project discussion round cap', Number, 3)
   .option('--max-messages <n>', 'New-project message cap', Number, 24)
   .option('--checks <json>', 'New-project named checks as argv arrays, or @file')
   .option('--check-timeout <seconds>', 'New-project timeout for each check run', Number)
@@ -170,7 +170,7 @@ withRepo(
 )
   .option('--preset <name>', 'coding or research', 'coding')
   .option('--participants <ids>', 'Comma-separated peer IDs', 'codex,claude')
-  .option('--max-rounds <n>', 'Discussion rounds after independent proposals', Number, 4)
+  .option('--max-rounds <n>', 'Discussion rounds after independent proposals', Number, 3)
   .option('--max-messages <n>', 'Hard cap on contributions', Number, 24)
   .option('--minutes <n>', 'Wall-clock session limit', Number, 30)
   .option('--check-timeout <seconds>', 'Timeout for each check run', Number, 300)
@@ -231,15 +231,37 @@ withRepo(program.command('wait'))
   .requiredOption('--after <revision>', 'Last observed revision', Number)
   .option('--timeout <ms>', 'Maximum 25000 ms', Number, 25000)
   .action(async (opts) => output(await core(opts).wait(opts.agent, opts.after, opts.timeout)));
-withRepo(program.command('claim'))
+withRepo(program.command('diff').description("Show a candidate's changes as a unified diff."))
   .requiredOption('--agent <id>')
-  .requiredOption('--files <paths...>')
-  .option('--seconds <n>', 'Lease length', Number, 300)
-  .action(async (opts) => output(await core(opts).claim(opts.agent, opts.files, opts.seconds)));
-withRepo(program.command('release'))
+  .requiredOption('--candidate <id>')
+  .action(async (opts) =>
+    process.stdout.write((await core(opts).diff(opts.agent, opts.candidate)).diff),
+  );
+withRepo(
+  program
+    .command('checkout')
+    .description('Create a runnable copy of a candidate for review and print its path.'),
+)
   .requiredOption('--agent <id>')
-  .option('--files <paths...>', 'Omit to release all')
-  .action(async (opts) => output(await core(opts).release(opts.agent, opts.files)));
+  .requiredOption('--candidate <id>')
+  .action(async (opts) => output(await core(opts).checkout(opts.agent, opts.candidate)));
+withRepo(
+  program
+    .command('apply')
+    .description(
+      'Apply the agreed candidate, or one you choose, to your working tree after the session ends.',
+    ),
+)
+  .option('--candidate <id>', 'Candidate to apply instead of the agreed one')
+  .option('--json', 'Print the result as JSON')
+  .action(async (opts) => {
+    const applied = await core(opts).apply(opts.candidate);
+    output(
+      opts.json
+        ? applied
+        : `Applied ${applied.candidate}: ${applied.files.join(', ') || 'no file changes'}.`,
+    );
+  });
 withRepo(program.command('verify'))
   .requiredOption('--agent <id>')
   .requiredOption('--candidate <id>')
@@ -310,7 +332,7 @@ withRepo(
   program.command('serve').description('Run stdio MCP server with a fixed participant identity.'),
 )
   .requiredOption('--agent <id>')
-  .option('--worker-tools', 'Expose only read, claim, release, and verification tools')
+  .option('--worker-tools', 'Expose only status, review, and verification tools')
   .option('--no-contract', 'Omit the peer contract from server instructions')
   .action(async (opts) => {
     const { serve } = await import('../src/server.js');
@@ -342,7 +364,10 @@ withRepo(
     const state = await core(opts).status(opts.agent);
     if (opts.session && state.session?.id !== opts.session)
       throw new Error('Session changed before native launch.');
-    const result = await launch(opts.repo, opts.agent, opts);
+    const result = await launch(opts.repo, opts.agent, {
+      ...opts,
+      workspace: state.session?.workspace,
+    });
     if (opts.print) output(result);
     else process.exitCode = result.exitCode;
   });

@@ -10,6 +10,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { Collaboration } from '../src/core.js';
 import { runWorker } from '../src/worker.js';
 import { runProcess } from '../src/native.js';
+import { gitProject } from './helpers.js';
 
 const cli = fileURLToPath(new URL('../bin/model-collab.js', import.meta.url));
 const proposal = () => ({
@@ -35,8 +36,7 @@ const deferred = () => {
 };
 
 async function fixture(t, config = {}) {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'model-collab-worker-'));
-  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const root = await gitProject(t, 'model-collab-worker-');
   const collab = new Collaboration(root);
   await collab.init(config);
   await collab.start({ topic: 'Implement interval overlap with half-open boundaries.' });
@@ -63,7 +63,7 @@ async function assertViews(collab) {
 }
 
 test(
-  'two workers wake each other, preserve independent views and stop after unanimous acceptance',
+  'two workers solve in their own workspaces and converge on the first acceptance',
   { timeout: 5000 },
   async (t) => {
     const { root, collab } = await fixture(t);
@@ -71,15 +71,18 @@ test(
       events = [];
     const turn = async ({ agent, state }) => {
       observed.push({ agent, state });
+      assert.equal(state.session.workspace, path.join(root, '.collab', 'work', agent));
       if (state.session.phase === 'independent') {
         assert.equal(state.session.messages.length, 0);
         assert.equal(state.session.candidates.length, 0);
+        await fs.writeFile(path.join(state.session.workspace, `${agent}.txt`), agent);
         return proposal();
       }
+      const peer = state.session.candidates.find((candidate) => candidate.agent !== agent);
       return {
         kind: 'accept',
         summary: 'Agree after checking adjacency.',
-        candidate: 'm1',
+        candidate: peer.id,
         evidence: ['Strict inequality rejects [1,2) / [2,3).'],
       };
     };
@@ -92,20 +95,50 @@ test(
       results.map((result) => result.status),
       ['converged', 'converged'],
     );
-    assert.deepEqual(
-      results.map((result) => result.calls),
-      [2, 2],
-    );
-    assert.equal(observed.length, 4);
+    assert.ok(observed.length >= 3 && observed.length <= 4);
     assert.equal(events.filter((event) => event.event === 'complete').length, 2);
-    assert.equal(events.filter((event) => event.event === 'sent').length, 4);
+    assert.equal(events.filter((event) => event.event === 'sent').length, 3);
     const { state } = await assertViews(collab);
-    assert.equal(state.session.messages.length, 4);
-    assert.deepEqual(
-      new Set(state.session.messages.map((message) => message.clientMessageId)).size,
-      4,
-    );
-    assert.equal(state.session.winner, 'm1');
+    assert.equal(state.session.messages.length, 3);
+    const winner = state.session.candidates.find((c) => c.id === state.session.winner);
+    assert.deepEqual(state.session.applied.files, [`${winner.agent}.txt`]);
+    assert.equal(await fs.readFile(path.join(root, `${winner.agent}.txt`), 'utf8'), winner.agent);
+  },
+);
+
+test(
+  "a peer's acceptance cancels the other worker's in-flight turn",
+  { timeout: 5000 },
+  async (t) => {
+    const { root, collab } = await fixture(t);
+    await post(collab, 'codex', proposal());
+    await post(collab, 'claude', proposal());
+    const events = [];
+    let aborted = false;
+    const waiting = runWorker({
+      root,
+      agent: 'claude',
+      onEvent: (event) => events.push(event),
+      turn: ({ signal }) =>
+        new Promise((resolve, reject) => {
+          signal.addEventListener('abort', () => {
+            aborted = true;
+            reject(new Error('aborted'));
+          });
+        }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await post(collab, 'codex', {
+      kind: 'accept',
+      candidate: 'm2',
+      summary: 'Peer candidate passes my tests.',
+      evidence: ['Ran my six boundary cases against m2.'],
+    });
+    const result = await waiting;
+    assert.equal(aborted, true);
+    assert.equal(result.status, 'converged');
+    assert.equal(result.calls, 1);
+    assert.ok(events.some((event) => event.event === 'cancelled'));
   },
 );
 
@@ -323,8 +356,9 @@ test('aborting an in-flight turn never posts its result', { timeout: 5000 }, asy
     agent: 'codex',
     signal: controller.signal,
     turn: async ({ signal }) => {
-      assert.equal(signal, controller.signal);
+      assert.equal(signal.aborted, false);
       controller.abort();
+      assert.equal(signal.aborted, true);
       return proposal();
     },
   });
@@ -430,7 +464,7 @@ test('live README and JSONL track committed state and refresh repairs derived fi
 });
 
 test(
-  'worker MCP connections expose context, claims and verification without posting or lifecycle tools',
+  'worker MCP connections expose status, review and verification without posting or lifecycle tools',
   { timeout: 5000 },
   async (t) => {
     const { root } = await fixture(t);
@@ -444,6 +478,6 @@ test(
       }),
     );
     const tools = (await client.listTools()).tools.map((tool) => tool.name).sort();
-    assert.deepEqual(tools, ['collab_claim', 'collab_release', 'collab_status', 'collab_verify']);
+    assert.deepEqual(tools, ['collab_checkout', 'collab_diff', 'collab_status', 'collab_verify']);
   },
 );

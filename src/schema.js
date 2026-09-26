@@ -11,7 +11,7 @@ export const configSchema = z
       .min(2)
       .max(8)
       .refine((v) => new Set(v).size === v.length, 'Participants must be unique'),
-    maxRounds: z.number().int().min(1).max(12).default(4),
+    maxRounds: z.number().int().min(1).max(12).default(3),
     maxMessages: z.number().int().min(4).max(100).default(24),
     deadlineMinutes: z.number().min(0.01).max(240).default(30),
     checkTimeoutSeconds: z.number().int().min(1).max(3600).default(300),
@@ -33,7 +33,6 @@ export const messageSchema = z
     evidence: z.array(z.string().trim().min(1).max(1000)).max(10).default([]),
     candidate: z.string().max(80).optional(),
     solution: z.string().max(16000).optional(),
-    files: z.array(z.string().min(1).max(500)).max(50).default([]),
     repliesTo: z.string().max(80).optional(),
     resolves: z.array(z.string().max(80)).max(10).default([]),
   })
