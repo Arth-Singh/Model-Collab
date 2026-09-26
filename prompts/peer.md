@@ -115,8 +115,10 @@ this goal. Before writing anything:
 Then send exactly one verdict:
 
 - `accept` a candidate you verified. Cite what you ran. If the candidates are
-  equivalent on everything you tested, accept the one with the smaller ID even
-  if it is not yours; that rule keeps equal candidates from bouncing.
+  equivalent on everything you tested, accept the one with the smaller ID,
+  whoever wrote it. When that is your own, accept it anyway: your vote does not
+  change, and your peer, following the same rule, accepts it too. This rule
+  keeps equal candidates from bouncing.
 - `challenge` a candidate with a specific failure: the input, the expected and
   actual result, and the requirement it violates. Say what would resolve it.
 - `proposal` (a revision) only when you can show a defect in every current
