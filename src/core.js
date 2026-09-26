@@ -20,6 +20,7 @@ import {
   listThreads,
   readPost,
   readThread,
+  publicPosts,
   renderBoard,
   searchPosts,
   visiblePosts,
@@ -736,7 +737,7 @@ export class Collaboration {
         fingerprint,
       };
       await this.board.append(post);
-      await atomicWrite(path.join(this.dir, 'BOARD.md'), renderBoard(await this.board.posts()));
+      await this.publishBoard(state);
       return { post: postReceipt(post), duplicate: false };
     });
   }
@@ -806,7 +807,19 @@ export class Collaboration {
     );
   }
 
+  // BOARD.md is readable by both peers, so it never shows sealed posts; it is
+  // regenerated with every state change, including the reveal.
+  async publishBoard(state) {
+    const posts = await this.board.posts();
+    if (!posts.length) return;
+    await atomicWrite(
+      path.join(this.dir, 'BOARD.md'),
+      renderBoard(publicPosts(posts, state.session)),
+    );
+  }
+
   async publishViews(state) {
+    await this.publishBoard(state);
     await atomicWrite(path.join(this.dir, 'README.md'), this.renderTranscript(state, 'markdown'));
     await atomicWrite(path.join(this.dir, 'messages.jsonl'), this.renderTranscript(state, 'jsonl'));
   }

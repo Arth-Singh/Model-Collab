@@ -350,7 +350,13 @@ async function rememberGoals(plan, options, when) {
       signal: options.signal,
       call: options.memoryCall,
     });
-    options.onEvent?.({ event: 'memory', status: 'updated', changed: result.changed, when });
+    options.onEvent?.({
+      event: 'memory',
+      status: 'updated',
+      changed: result.changed,
+      skipped: result.skipped.length,
+      when,
+    });
     return result;
   } catch (error) {
     options.onEvent?.({ event: 'memory', status: 'failed', error: error.message, when });

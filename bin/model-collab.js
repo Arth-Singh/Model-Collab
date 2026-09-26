@@ -470,9 +470,16 @@ withRepo(
         ? result
         : result.disabled
           ? 'Project memory is off. Turn it on with model-collab configure --memory on.'
-          : result.consolidated.length
-            ? `Remembered ${result.consolidated.length} goal(s)${result.changed ? '; .collab/MEMORY.md changed' : '; nothing durable to add'}.`
-            : 'No finished goals to remember.',
+          : [
+              result.consolidated.length
+                ? `Remembered ${result.consolidated.length} goal(s)${result.changed ? '; .collab/MEMORY.md changed' : '; nothing durable to add'}.`
+                : 'No finished goals to remember.',
+              ...(result.skipped.length
+                ? [
+                    `Skipped ${result.skipped.length} older goal(s); an update remembers at most the three most recent.`,
+                  ]
+                : []),
+            ].join('\n'),
     );
   });
 withRepo(

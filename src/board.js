@@ -75,6 +75,13 @@ export class BoardStore {
 const sealing = (session) =>
   ['active', 'paused'].includes(session?.status) && session.phase === 'independent';
 
+// A reply inherits its thread's seal, so a visible reply never exposes a
+// hidden first post or leaves an orphan.
+function unsealed(posts, isSealed) {
+  const hidden = new Set(posts.filter((p) => p.thread === p.id && isSealed(p)).map((p) => p.id));
+  return posts.filter((p) => !isSealed(p) && !hidden.has(p.thread));
+}
+
 /**
  * Posts `viewer` may see. While a goal is in its independent phase, a peer's
  * posts from that goal stay sealed, like its candidate. The user (no viewer)
@@ -82,9 +89,16 @@ const sealing = (session) =>
  */
 export function visiblePosts(posts, session, viewer) {
   if (!viewer || !sealing(session)) return posts;
-  return posts.filter(
-    (p) => p.author === viewer || p.author === 'user' || p.sessionId !== session.id,
+  return unsealed(
+    posts,
+    (p) => p.author !== viewer && p.author !== 'user' && p.sessionId === session.id,
   );
+}
+
+/** Posts a file every peer can read may show: no participant's sealed posts. */
+export function publicPosts(posts, session) {
+  if (!sealing(session)) return posts;
+  return unsealed(posts, (p) => p.author !== 'user' && p.sessionId === session.id);
 }
 
 function meta(post, session) {

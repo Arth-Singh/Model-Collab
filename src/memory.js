@@ -68,7 +68,11 @@ const SECRET_PATTERNS = [
   /\bsk-[A-Za-z0-9_-]{16,}/g,
   /\bAKIA[0-9A-Z]{16}\b/g,
   /\bgh[pousr]_[A-Za-z0-9]{20,}/g,
-  /\b((?:api[_-]?key|secret|token|password|passwd)\s*[:=]\s*)["']?[^\s"',]{6,}/gi,
+  // Any literal password is a secret; references to variables are not.
+  /\b((?:password|passwd)\s*[:=]\s*["']?)(?![$<{%]|process\.|os\.)[^\s"',;]{6,}/gi,
+  // Other assignments count only when the value looks like a credential: 12 or
+  // more characters mixing letters and digits.
+  /\b((?:api[_-]?key|secret|token)\s*[:=]\s*["']?)(?=[A-Za-z0-9_\-./+=]*[0-9])(?=[A-Za-z0-9_\-./+=]*[A-Za-z])[A-Za-z0-9_\-./+=]{12,}/gi,
 ];
 
 export function redactSecrets(text) {
@@ -282,9 +286,28 @@ export async function modelCall({ root, agent = 'claude', model, effort = 'low',
   }
 }
 
+const emptyMeta = () => ({ consolidated: {}, lastWritten: null });
+
+/**
+ * Finish or discard an update interrupted between its writes. Callers hold the
+ * lock. MEMORY.md and memory.json cannot change together atomically, so an
+ * update first records what it is about to write.
+ */
+async function recoverMeta(metaFile, memoryFile) {
+  const meta = await readJson(metaFile, emptyMeta());
+  if (!meta.pending) return meta;
+  if ((await readText(memoryFile)) === meta.pending.memory) {
+    meta.consolidated[meta.pending.session] = new Date().toISOString();
+    meta.lastWritten = meta.pending.memory;
+  }
+  delete meta.pending;
+  await atomicWrite(metaFile, JSON.stringify(meta, null, 2) + '\n');
+  return meta;
+}
+
 /**
  * Fold finished goals into MEMORY.md, oldest first, at most three per run; older
- * backlog is marked skipped. `call` replaces the model call in tests.
+ * backlog is marked skipped and reported. `call` replaces the model call in tests.
  */
 export async function updateMemory(root, { agent, model, effort, signal, call = modelCall } = {}) {
   const collab = new Collaboration(root);
@@ -292,21 +315,22 @@ export async function updateMemory(root, { agent, model, effort, signal, call = 
   const state = await readJson(collab.file, null);
   if (!state) throw new Error('Run model-collab init first.');
   if (!configSchema.parse(state.config).memory) return { disabled: true, consolidated: [] };
+  const metaFile = path.join(dir, 'memory.json'),
+    memoryFile = path.join(dir, 'MEMORY.md');
+  await collab.locked(() => recoverMeta(metaFile, memoryFile));
   const pending = await pendingGoals(collab.root);
   const skipped = pending.slice(0, -MAX_GOALS_PER_RUN);
   const goals = pending.slice(-MAX_GOALS_PER_RUN);
-  const metaFile = path.join(dir, 'memory.json'),
-    memoryFile = path.join(dir, 'MEMORY.md');
   if (skipped.length)
     await collab.locked(async () => {
-      const meta = await readJson(metaFile, { consolidated: {}, lastWritten: null });
+      const meta = await readJson(metaFile, emptyMeta());
       for (const s of skipped) meta.consolidated[s.id] = 'skipped';
       await atomicWrite(metaFile, JSON.stringify(meta, null, 2) + '\n');
     });
   const consolidated = [];
   let changed = false;
   for (const session of goals) {
-    const meta = await readJson(metaFile, { consolidated: {}, lastWritten: null });
+    const meta = await readJson(metaFile, emptyMeta());
     const current = await readText(memoryFile);
     const edits = await userEdits(dir, meta.lastWritten ?? null, current);
     const input = [
@@ -326,8 +350,11 @@ export async function updateMemory(root, { agent, model, effort, signal, call = 
       // The user may have edited MEMORY.md during the model call; keep their
       // version and fold this goal in on the next run instead.
       if ((await readText(memoryFile)) !== current) return false;
-      const latest = await readJson(metaFile, { consolidated: {}, lastWritten: null });
+      const latest = await readJson(metaFile, emptyMeta());
+      latest.pending = { session: session.id, memory };
+      await atomicWrite(metaFile, JSON.stringify(latest, null, 2) + '\n');
       if (memory !== current) await atomicWrite(memoryFile, memory);
+      delete latest.pending;
       latest.consolidated[session.id] = new Date().toISOString();
       latest.lastWritten = memory;
       await atomicWrite(metaFile, JSON.stringify(latest, null, 2) + '\n');
@@ -341,18 +368,20 @@ export async function updateMemory(root, { agent, model, effort, signal, call = 
 }
 
 /**
- * Delete MEMORY.md. Goals already remembered stay marked, so the memory is not
- * rebuilt from them; goal history and the board are kept.
+ * Start memory over: delete MEMORY.md and mark every finished goal so far,
+ * including ones not yet remembered, so none is folded into the new memory.
+ * Goal history and the board are kept.
  */
 export async function clearMemory(root) {
   const collab = new Collaboration(root);
   await collab.locked(async () => {
-    const metaFile = path.join(collab.dir, 'memory.json');
-    const meta = await readJson(metaFile, { consolidated: {}, lastWritten: null });
+    const metaFile = path.join(collab.dir, 'memory.json'),
+      memoryFile = path.join(collab.dir, 'MEMORY.md');
+    const meta = await recoverMeta(metaFile, memoryFile);
     for (const session of await pendingGoals(collab.root))
       meta.consolidated[session.id] = 'cleared';
     meta.lastWritten = null;
-    await fs.rm(path.join(collab.dir, 'MEMORY.md'), { force: true });
+    await fs.rm(memoryFile, { force: true });
     await atomicWrite(metaFile, JSON.stringify(meta, null, 2) + '\n');
   });
 }

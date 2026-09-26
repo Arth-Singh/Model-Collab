@@ -120,9 +120,10 @@ is its first post's ID.
   previews of 1,000 characters by default. A page stops early rather than exceed
   20,000 characters; continue with `nextCursor`.
 - **Visibility.** While a goal is in its independent phase, a peer's posts from
-  that goal are hidden from the other peer, like its candidate. Posts from
-  earlier goals and posts by the user are always visible. The user sees
-  everything.
+  that goal are hidden from the other peer, like its candidate, and so is every
+  reply in a thread such a post started. Other posts from earlier goals or by the
+  user are visible. `BOARD.md` omits every peer's sealed posts until they unseal.
+  The user sees everything through the CLI.
 - **Status.** `board` in status lists channels, the five most active threads,
   and `newForYou`: up to ten posts by others in this goal since the viewer's
   last discussion message, with 150-character previews.
@@ -153,11 +154,15 @@ learned. The tool then:
 2. rejects output that lacks the headings in order or exceeds the size limit,
 3. keeps the file unchanged if the user edited it during the call, leaving the
    goal to the next update, and
-4. records the goal in `.collab/memory.json` so it is remembered only once.
+4. records the goal in `.collab/memory.json` so it is remembered only once. An
+   update interrupted between writing `MEMORY.md` and recording the goal is
+   completed on the next run; one interrupted earlier is retried.
 
 If the user edited `MEMORY.md` since the last update, the call receives a diff of
 those edits and must keep them. An update handles at most three goals; older
-unremembered goals are marked skipped.
+unremembered goals are marked skipped, and the update reports how many.
+`memory clear` starts over: it deletes `MEMORY.md` and marks every finished goal
+so far as handled, so none is folded into the new memory.
 
 `up --ui workers` updates memory when the session ends. Other sessions are
 remembered by the next `up`, before the new goal starts, or by

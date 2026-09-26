@@ -128,6 +128,37 @@ test("a peer's posts stay sealed until both peers have proposed", async (t) => {
   assert.equal(open.newForYou.posts[0].currentGoal, true);
 });
 
+test('BOARD.md never shows sealed posts, and a reply inherits its thread’s seal', async (t) => {
+  const { root, collab } = await fixture(t);
+  const file = path.join(root, '.collab', 'BOARD.md');
+  await collab.boardPost('codex', { channel: 'findings', text: 'SEALED_CODEX_DETAIL' });
+  await collab.boardPost('user', { thread: 'p1', text: 'User reply to the sealed post.' });
+  await collab.boardPost('user', { channel: 'decisions', text: 'Keep the API.' });
+  const sealedView = await fs.readFile(file, 'utf8');
+  assert.doesNotMatch(sealedView, /SEALED_CODEX_DETAIL|User reply to the sealed post/);
+  assert.match(sealedView, /Keep the API/);
+
+  assert.deepEqual(ids(await collab.boardSearch('claude', {})), ['p3']);
+  assert.deepEqual(
+    (await collab.boardThreads('claude', {})).results.map((t) => t.thread),
+    ['p3'],
+  );
+  await assert.rejects(
+    collab.boardReadThread('claude', { thread: 'p2' }),
+    /^Error: Unknown thread p2\.$/,
+  );
+  await assert.rejects(collab.boardReadPost('claude', { post: 'p2' }), /Unknown post p2/);
+  assert.deepEqual(
+    (await collab.boardReadThread('codex', { thread: 'p1' })).replies.results.map((p) => p.id),
+    ['p2'],
+  );
+
+  await collab.post('codex', proposal());
+  await collab.post('claude', proposal());
+  assert.match(await fs.readFile(file, 'utf8'), /SEALED_CODEX_DETAIL[\s\S]*User reply/);
+  assert.deepEqual(ids(await collab.boardSearch('claude', {})), ['p3', 'p2', 'p1']);
+});
+
 test('board posts persist into later goals and do not change the session', async (t) => {
   const { collab } = await fixture(t);
   const before = (await collab.status()).revision;

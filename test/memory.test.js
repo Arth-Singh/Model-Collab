@@ -50,7 +50,16 @@ test('secrets are redacted before memory is stored', () => {
   );
   assert.doesNotMatch(text, /sk-abc|abcdefghijklmnopqrstuvwxyz|AKIAABC|hunter22|ghp_/);
   assert.match(text, /password=\[REDACTED\]/);
-  assert.equal(redactSecrets('run `npm test` with PORT=3000'), 'run `npm test` with PORT=3000');
+  for (const safe of [
+    'run `npm test` with PORT=3000',
+    'Run tests with `TOKEN=dummy123 npm test`.',
+    'export API_KEY=local-dev-only before running.',
+    'const secret = process.env.SECRET_KEY;',
+    'const password = process.env.DB_PASSWORD;',
+    'secret=${SECRET}',
+  ])
+    assert.equal(redactSecrets(safe), safe);
+  assert.equal(redactSecrets('token: "a8f3kd92jf83kdl2"'), 'token: "[REDACTED]"');
 });
 
 test('a goal record carries the outcome, messages, user notes, and that goal’s board posts', async (t) => {
@@ -118,6 +127,61 @@ test('an edit to MEMORY.md during the model call wins, and the goal stays pendin
   assert.deepEqual(result.consolidated, []);
   assert.match(await fs.readFile(file, 'utf8'), /written by the user meanwhile/);
   assert.equal((await pendingGoals(root)).length, 1);
+});
+
+test('an update interrupted between its two writes is finished or discarded, never misread', async (t) => {
+  const { root } = await finishedGoals(t, ['Goal one.', 'Goal two.']);
+  const [one, two] = (await pendingGoals(root)).map((s) => s.id);
+  const dir = path.join(root, '.collab');
+  const written = memory('- goal one remembered');
+  // Crash after MEMORY.md was written: the update is completed, not re-run.
+  await fs.writeFile(path.join(dir, 'MEMORY.md'), written);
+  await fs.writeFile(
+    path.join(dir, 'memory.json'),
+    JSON.stringify({
+      consolidated: {},
+      lastWritten: null,
+      pending: { session: one, memory: written },
+    }),
+  );
+  const inputs = [];
+  await updateMemory(root, {
+    call: async ({ input }) => {
+      inputs.push(input);
+      return { changed: true, memory: memory('- goal two remembered') };
+    },
+  });
+  assert.equal(inputs.length, 1);
+  assert.match(inputs[0], /Goal two\./);
+  assert.doesNotMatch(inputs[0], /USER'S EDITS/);
+  const meta = JSON.parse(await fs.readFile(path.join(dir, 'memory.json'), 'utf8'));
+  assert.ok(meta.consolidated[one] && meta.consolidated[two]);
+  assert.equal(meta.pending, undefined);
+});
+
+test('an update interrupted before MEMORY.md was written leaves the goal pending', async (t) => {
+  const { root } = await finishedGoals(t, ['Goal one.']);
+  const [one] = (await pendingGoals(root)).map((s) => s.id);
+  await fs.writeFile(
+    path.join(root, '.collab', 'memory.json'),
+    JSON.stringify({
+      consolidated: {},
+      lastWritten: null,
+      pending: { session: one, memory: memory('- never written') },
+    }),
+  );
+  const inputs = [];
+  await updateMemory(root, {
+    call: async ({ input }) => {
+      inputs.push(input);
+      return { changed: true, memory: memory('- goal one remembered') };
+    },
+  });
+  assert.match(inputs[0], /Goal one\./);
+  assert.match(
+    await fs.readFile(path.join(root, '.collab', 'MEMORY.md'), 'utf8'),
+    /goal one remembered/,
+  );
 });
 
 test('invalid model output is rejected and nothing is written', async (t) => {

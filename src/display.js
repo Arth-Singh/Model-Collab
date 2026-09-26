@@ -73,9 +73,12 @@ export function renderWorkerEvent(event) {
         : 'Updating project memory from this goal.';
     if (event.status === 'failed')
       return `Project memory was not updated: ${event.error} Run model-collab memory update to retry.`;
+    const skipped = event.skipped
+      ? ` Skipped ${event.skipped} older goal(s); an update remembers at most three.`
+      : '';
     return event.changed
-      ? 'Project memory updated: .collab/MEMORY.md'
-      : 'Project memory unchanged; nothing durable to add.';
+      ? `Project memory updated: .collab/MEMORY.md.${skipped}`
+      : `Project memory unchanged; nothing durable to add.${skipped}`;
   }
   if (event.event === 'cancelled')
     return `[${event.agent}] Stopped its turn early; the session is ${event.reason}.`;
