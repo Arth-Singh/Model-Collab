@@ -9,7 +9,7 @@ import {
   researchContract,
   serverConfig,
 } from './setup.js';
-import { runProcess, DEFAULT_MODELS } from './native.js';
+import { runProcess, DEFAULT_EFFORT, DEFAULT_MODELS } from './native.js';
 
 export const DEFAULT_TURN_TIMEOUT_MS = 900000;
 const MAX_TURN_TIMEOUT_MS = 3600000;
@@ -70,7 +70,7 @@ export async function nativeTurn({
   state,
   timeoutMs,
   model,
-  effort = 'xhigh',
+  effort = DEFAULT_EFFORT,
   logDir,
   signal,
   rejection,
@@ -202,7 +202,7 @@ export async function runWorker({
   root,
   agent,
   model,
-  effort = 'xhigh',
+  effort = DEFAULT_EFFORT,
   timeoutMs = DEFAULT_TURN_TIMEOUT_MS,
   turn = nativeTurn,
   onEvent = () => {},

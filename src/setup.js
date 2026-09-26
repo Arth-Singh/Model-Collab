@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
-import { DEFAULT_MODELS } from './native.js';
+import { DEFAULT_EFFORT, DEFAULT_MODELS } from './native.js';
 
 export const binPath = fileURLToPath(new URL('../bin/model-collab.js', import.meta.url));
 export const peerContract = await fs.readFile(
@@ -82,7 +82,7 @@ export async function writeInstructions(root, participants, { preset = 'coding' 
     );
 }
 
-export async function launch(root, agent, { model, effort = 'xhigh', print = false } = {}) {
+export async function launch(root, agent, { model, effort = DEFAULT_EFFORT, print = false } = {}) {
   if (!['codex', 'claude'].includes(agent))
     throw new Error(
       'Launch supports codex or claude; other participants may connect through serve.',

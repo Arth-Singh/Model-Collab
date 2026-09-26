@@ -2,10 +2,10 @@
 
 ## Models
 
-| Client      | Default model          | Default effort |
-| ----------- | ---------------------- | -------------- |
-| Codex       | `gpt-6-astra`          | `xhigh`        |
-| Claude Code | `claude-fable-5-1[1m]` | `xhigh`        |
+| Client      | Default model     | Default effort |
+| ----------- | ----------------- | -------------- |
+| Codex       | `gpt-6-astra`     | `high`         |
+| Claude Code | `claude-opus-5-5` | `high`         |
 
 Use model IDs and effort levels supported by your installed clients and account.
 Both agents use their existing CLI authentication.

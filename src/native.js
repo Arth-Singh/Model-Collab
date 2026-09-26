@@ -2,8 +2,9 @@ import { spawn } from 'node:child_process';
 
 export const DEFAULT_MODELS = Object.freeze({
   codex: 'gpt-6-astra',
-  claude: 'claude-fable-5-1[1m]',
+  claude: 'claude-opus-5-5',
 });
+export const DEFAULT_EFFORT = 'high';
 
 /** Run without a shell. Bound output and terminate the whole POSIX process group. */
 export function runProcess(command, args = [], options = {}) {

@@ -6,7 +6,7 @@ import { Collaboration } from '../src/core.js';
 import { sessionIdSchema } from '../src/schema.js';
 import { launch, serverConfig, writeInstructions } from '../src/setup.js';
 import { renderStartup, renderStatus, renderWorkerEvent } from '../src/display.js';
-import { DEFAULT_MODELS } from '../src/native.js';
+import { DEFAULT_EFFORT, DEFAULT_MODELS } from '../src/native.js';
 import { DEFAULT_TURN_TIMEOUT_MS } from '../src/worker.js';
 
 const { version } = JSON.parse(
@@ -53,7 +53,7 @@ withRepo(
   .option('--checks <json>', 'New-project named checks as argv arrays, or @file')
   .option('--check-timeout <seconds>', 'New-project timeout for each check run', Number)
   .option('--criteria <text...>', 'Success criteria')
-  .option('--effort <level>', 'Reasoning effort', 'xhigh')
+  .option('--effort <level>', 'Reasoning effort', DEFAULT_EFFORT)
   .option('--turn-timeout <seconds>', 'Workers: time limit for one model turn', Number, 900)
   .option('--codex-model <model>', 'Codex model', DEFAULT_MODELS.codex)
   .option('--claude-model <model>', 'Claude model', DEFAULT_MODELS.claude)
@@ -336,7 +336,7 @@ withRepo(
   .requiredOption('--agent <id>')
   .option('--session <id>', 'Expected collaboration session')
   .option('--model <model>', 'Model override')
-  .option('--effort <level>', 'Reasoning effort', 'xhigh')
+  .option('--effort <level>', 'Reasoning effort', DEFAULT_EFFORT)
   .option('--print', 'Print launch argv without running it')
   .action(async (opts) => {
     const state = await core(opts).status(opts.agent);
@@ -365,7 +365,7 @@ withRepo(
 )
   .requiredOption('--agent <id>')
   .option('--model <model>')
-  .option('--effort <level>', 'Reasoning effort', 'xhigh')
+  .option('--effort <level>', 'Reasoning effort', DEFAULT_EFFORT)
   .option('--timeout <ms>', 'Per-turn timeout', Number, DEFAULT_TURN_TIMEOUT_MS)
   .action(async (opts) => {
     const { runWorker } = await import('../src/worker.js');

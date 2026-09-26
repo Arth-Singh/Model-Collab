@@ -8,7 +8,7 @@ import { configSchema, startSchema, sessionIdSchema } from './schema.js';
 import { binPath, writeInstructions } from './setup.js';
 import { runCommand } from './process.js';
 import { runWorker, DEFAULT_TURN_TIMEOUT_MS } from './worker.js';
-import { DEFAULT_MODELS } from './native.js';
+import { DEFAULT_EFFORT, DEFAULT_MODELS } from './native.js';
 
 const SOCKET = 'model-collab';
 const digest = (text) => createHash('sha256').update(text).digest('hex').slice(0, 10);
@@ -22,7 +22,7 @@ export async function planUp({
   preset,
   ui = 'tmux',
   models = {},
-  effort = 'xhigh',
+  effort = DEFAULT_EFFORT,
   checks,
   minutes = 30,
   maxRounds = 4,

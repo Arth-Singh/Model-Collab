@@ -103,8 +103,8 @@ model-collab status --human
 
 ## Models and session limits
 
-Defaults are `gpt-6-astra` for Codex and `claude-fable-5-1[1m]` for Claude Code,
-both with `xhigh` effort. Override them with model IDs available to your account:
+Defaults are `gpt-6-astra` for Codex and `claude-opus-5-5` for Claude Code,
+both with `high` effort. Override them with model IDs available to your account:
 
 ```sh
 model-collab up "Review this change" \
