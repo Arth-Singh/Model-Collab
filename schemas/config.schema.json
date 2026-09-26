@@ -45,6 +45,15 @@
       "minimum": 1,
       "maximum": 3600
     },
+    "dependencyDirs": {
+      "default": ["node_modules", ".venv", "venv"],
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[^/\\\\]+$"
+      }
+    },
     "checks": {
       "default": {},
       "type": "object",

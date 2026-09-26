@@ -18,15 +18,6 @@ const BASE_REF = 'refs/model-collab/base';
 const MAX_CHANGED_FILES = 500;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 50 * 1024 * 1024;
-// Ignored entries that are caches, not dependencies; sharing them adds nothing.
-const UNLINKED = new Set([
-  '.collab',
-  '.DS_Store',
-  '__pycache__',
-  '.pytest_cache',
-  '.mypy_cache',
-  '.ruff_cache',
-]);
 
 // New files under these names are build or tool output, even in projects whose
 // .gitignore does not say so. Changes to tracked files are always captured.
@@ -92,8 +83,12 @@ export async function repoInfo(root) {
   return { top: await fs.realpath(text(top)), prefix };
 }
 
-/** Commit the current working tree, tracked and untracked, without touching the user's index. */
-export async function captureBase(root, tmpDir) {
+/**
+ * Commit the current working tree, tracked and untracked, without touching the
+ * user's index. `dependencyDirs` names ignored directories (such as node_modules)
+ * that worktrees and checkouts link to instead of rebuilding.
+ */
+export async function captureBase(root, tmpDir, dependencyDirs = []) {
   const { top, prefix } = await repoInfo(root);
   await fs.mkdir(tmpDir, { recursive: true });
   const index = path.join(tmpDir, `base-${randomUUID()}.index`);
@@ -124,14 +119,20 @@ export async function captureBase(root, tmpDir) {
     );
     // Keep the snapshot reachable so garbage collection cannot remove it mid-session.
     await git(top, ['update-ref', BASE_REF, commit]);
-    return { commit, top, prefix, links: await dependencyLinks(top) };
+    return { commit, top, prefix, links: await dependencyLinks(top, dependencyDirs) };
   } finally {
     await fs.rm(index, { force: true });
   }
 }
 
-/** Ignored files and directories (for example node_modules or .venv) that checkouts link to. */
-async function dependencyLinks(top) {
+/**
+ * Ignored directories whose name is listed in `dependencyDirs`, at any depth.
+ * Only these are shared: agents' sandboxes cannot write through the links, so a
+ * shared build or cache directory would break builds rather than speed them up.
+ */
+async function dependencyLinks(top, dependencyDirs) {
+  if (!dependencyDirs.length) return [];
+  const names = new Set(dependencyDirs);
   const ignored = nulList(
     (
       await git(top, [
@@ -146,8 +147,10 @@ async function dependencyLinks(top) {
     ).stdout,
   );
   return ignored
-    .map((entry) => entry.replace(/\/$/, ''))
-    .filter((entry) => !entry.split('/').some((part) => UNLINKED.has(part) || part === '.git'))
+    .filter((entry) => entry.endsWith('/'))
+    .map((entry) => entry.slice(0, -1))
+    .filter((entry) => names.has(path.posix.basename(entry)))
+    .filter((entry) => !entry.split('/').some((part) => part === '.git' || part === '.collab'))
     .slice(0, 500);
 }
 
@@ -256,7 +259,7 @@ export async function snapshotWorkspace(base, workspaceRoot, destination) {
 }
 
 async function writeChange(filesDir, change, target) {
-  await fs.rm(target, { force: true, recursive: false }).catch(() => {});
+  await fs.rm(target, { force: true });
   if (change.status === 'deleted') return;
   await fs.mkdir(path.dirname(target), { recursive: true });
   if (change.symlink !== undefined) {
@@ -286,49 +289,129 @@ export async function materialize(base, candidate, filesDir, dir) {
   return path.join(dir, base.prefix);
 }
 
-async function baseContent(base, file) {
-  const result = await git(base.top, ['cat-file', 'blob', `${base.commit}:${file}`], {
-    allowFailure: true,
+// A path's state for conflict detection: null (absent), a file with its content
+// and executable bit, a symlink target, or something else (such as a directory).
+const sameEntry = (a, b) =>
+  a === null || b === null
+    ? a === b
+    : a.type === b.type &&
+      (a.type !== 'file' || (a.content.equals(b.content) && a.executable === b.executable)) &&
+      (a.type !== 'symlink' || a.target === b.target);
+
+async function baseEntry(base, file) {
+  const listed = await git(base.top, ['ls-tree', '-z', base.commit, '--', file], {
+    env: { GIT_LITERAL_PATHSPECS: '1' },
   });
-  return result.code === 0 ? result.stdout : null;
+  const line = nulList(listed.stdout)[0];
+  if (!line) return null;
+  const [mode, type, object] = line.slice(0, line.indexOf('\t')).split(' ');
+  if (type !== 'blob') return { type: 'other' };
+  const content = (await git(base.top, ['cat-file', 'blob', object])).stdout;
+  if (mode === '120000') return { type: 'symlink', target: content.toString('utf8') };
+  return { type: 'file', content, executable: mode === '100755' };
 }
 
-async function currentContent(file) {
+async function baseContent(base, file) {
+  const entry = await baseEntry(base, file);
+  return entry?.type === 'file'
+    ? entry.content
+    : entry?.type === 'symlink'
+      ? Buffer.from(entry.target)
+      : null;
+}
+
+async function currentEntry(file) {
   const info = await fs.lstat(file).catch(() => null);
   if (!info) return null;
-  if (info.isSymbolicLink()) return Buffer.from(await fs.readlink(file));
-  return info.isFile() ? fs.readFile(file) : Buffer.from('\0directory');
+  if (info.isSymbolicLink()) return { type: 'symlink', target: await fs.readlink(file) };
+  if (!info.isFile()) return { type: 'other' };
+  return { type: 'file', content: await fs.readFile(file), executable: Boolean(info.mode & 0o111) };
+}
+
+async function wantedEntry(filesDir, change) {
+  if (change.status === 'deleted') return null;
+  if (change.symlink !== undefined) return { type: 'symlink', target: change.symlink };
+  return {
+    type: 'file',
+    content: await fs.readFile(path.join(filesDir, change.path)),
+    executable: Boolean(change.executable),
+  };
+}
+
+async function restoreEntry(target, entry) {
+  await fs.rm(target, { force: true });
+  if (entry === null) return;
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  if (entry.type === 'symlink') await fs.symlink(entry.target, target);
+  else if (entry.type === 'file') {
+    await fs.writeFile(target, entry.content);
+    await fs.chmod(target, entry.executable ? 0o755 : 0o644);
+  }
 }
 
 /**
- * Apply a candidate to the user's working tree. All paths are checked first; if
- * any file changed since the base in a different way, nothing is written.
+ * Apply a candidate to the user's working tree, all or nothing. Every path and
+ * every parent directory is checked first; if any changed since the base in a
+ * different way, nothing is written. If writing fails midway, the files already
+ * written are restored.
  */
 export async function applyCandidate(base, candidate, filesDir) {
   const plan = [];
   const conflicts = [];
+  const deleting = new Set(
+    candidate.changes.filter((c) => c.status === 'deleted').map((c) => safeRelative(c.path)),
+  );
   for (const change of candidate.changes) {
     const relative = safeRelative(change.path);
     const target = path.join(base.top, relative);
-    const current = await currentContent(target);
-    const original = await baseContent(base, relative);
-    const wanted =
-      change.status === 'deleted'
-        ? null
-        : change.symlink !== undefined
-          ? Buffer.from(change.symlink)
-          : await fs.readFile(path.join(filesDir, relative));
-    const same = (a, b) => (a === null ? b === null : b !== null && a.equals(b));
-    if (same(current, wanted)) continue;
-    if (!same(current, original)) conflicts.push(relative);
-    else plan.push({ change, target });
+    const parts = relative.split('/');
+    for (let i = 1; i < parts.length; i++) {
+      const parent = parts.slice(0, i).join('/');
+      const info = await fs.lstat(path.join(base.top, parent)).catch(() => null);
+      if (!info) break;
+      if (info.isDirectory()) continue;
+      // A parent may be a plain file only if this candidate deletes it unchanged.
+      const unchanged = sameEntry(
+        await currentEntry(path.join(base.top, parent)),
+        await baseEntry(base, parent),
+      );
+      if (!deleting.has(parent) || !unchanged) conflicts.push(parent);
+      break;
+    }
+    const current = await currentEntry(target);
+    const wanted = await wantedEntry(filesDir, change);
+    if (sameEntry(current, wanted)) continue;
+    if (!sameEntry(current, await baseEntry(base, relative))) conflicts.push(relative);
+    else plan.push({ change, target, current });
   }
   if (conflicts.length)
     fail(
-      `Not applied: you changed ${conflicts.join(', ')} after the session started. Resolve and run model-collab apply.`,
+      `Not applied: you changed ${[...new Set(conflicts)].join(', ')} after the session started. Resolve and run model-collab apply.`,
     );
-  for (const { change, target } of plan) await writeChange(filesDir, change, target);
-  return plan.map(({ change }) => change.path);
+  // Deletions first, so a file can be replaced by a directory of the same name.
+  plan.sort((a, b) => (b.change.status === 'deleted') - (a.change.status === 'deleted'));
+  const written = [];
+  const createdDirs = [];
+  try {
+    for (const item of plan) {
+      let missing = path.dirname(item.target);
+      const chain = [];
+      while (missing !== base.top && !(await fs.lstat(missing).catch(() => null))) {
+        chain.push(missing);
+        missing = path.dirname(missing);
+      }
+      written.push(item);
+      await writeChange(filesDir, item.change, item.target);
+      createdDirs.push(...chain);
+    }
+  } catch (error) {
+    for (const { target, current } of written.reverse())
+      await restoreEntry(target, current).catch(() => {});
+    for (const dir of createdDirs.sort((a, b) => b.length - a.length))
+      await fs.rmdir(dir).catch(() => {});
+    fail(`Not applied: ${error.message}. Your working tree was left as it was.`);
+  }
+  return plan.map(({ change }) => change.path).sort();
 }
 
 /** Unified diff of a candidate against the base, for review. */

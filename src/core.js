@@ -107,6 +107,7 @@ export class Collaboration {
         throw e;
       }
       const before = JSON.stringify(state);
+      const wasOpen = open(state.session);
       this.migrate(state);
       this.expire(state);
       let result, error;
@@ -122,6 +123,9 @@ export class Collaboration {
         await atomicWrite(this.file, JSON.stringify(state, null, 2) + '\n');
         await this.publishViews(state);
       }
+      // Review checkouts are full project copies; drop them once the session ends.
+      if (wasOpen && !open(state.session))
+        await fs.rm(path.join(this.dir, 'review'), { recursive: true, force: true });
       if (error) throw error;
       return structuredClone(result);
     });
@@ -165,7 +169,9 @@ export class Collaboration {
     return this.transaction(async (state) => {
       if (open(state.session))
         fail('A session is already active or paused. Stop it before starting another.');
-      const base = await captureBase(this.root, path.join(this.dir, 'tmp'));
+      // Projects initialized before dependencyDirs existed keep the default.
+      const dependencyDirs = configSchema.parse(state.config).dependencyDirs;
+      const base = await captureBase(this.root, path.join(this.dir, 'tmp'), dependencyDirs);
       if (state.session) {
         await fs.mkdir(path.join(this.dir, 'history'), { recursive: true });
         await atomicWrite(
@@ -177,8 +183,13 @@ export class Collaboration {
       for (const name of ['candidates', 'review', 'checkouts'])
         await fs.rm(path.join(this.dir, name), { recursive: true, force: true });
       const workspaces = {};
-      for (const agent of state.config.participants)
-        workspaces[agent] = await createWorkspace(base, path.join(this.dir, 'work', agent));
+      try {
+        for (const agent of state.config.participants)
+          workspaces[agent] = await createWorkspace(base, path.join(this.dir, 'work', agent));
+      } catch (error) {
+        await this.removeWorkspaces().catch(() => {});
+        throw error;
+      }
       state.session = {
         id: randomUUID(),
         ...parsed,
@@ -242,6 +253,7 @@ export class Collaboration {
       'maxMessages',
       'deadlineMinutes',
       'checkTimeoutSeconds',
+      'dependencyDirs',
       'checks',
     ]);
     if (Object.keys(changes).some((key) => !allowed.has(key))) fail('Unsupported project setting.');
@@ -283,6 +295,8 @@ export class Collaboration {
     } catch (error) {
       s.applied = { candidate: candidate.id, error: error.message, timestamp: now() };
     }
+    // Keep every attempt; `applied` is the latest.
+    s.applyLog = [...(s.applyLog ?? []), s.applied];
   }
 
   async post(agent, input, { sessionId } = {}) {

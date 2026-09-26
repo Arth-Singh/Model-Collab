@@ -88,13 +88,31 @@ model-collab init --checks @checks.json
 The agents must run all configured checks before accepting a proposal. Each
 check runs without a shell in a fresh copy of the project with the candidate's
 changes, so shell operators such as `&&` are not interpreted. Put complex checks
-in a script and invoke that script. Ignored dependency directories such as
-`node_modules` or `.venv` are linked into that copy.
+in a script and invoke that script. Linked dependency directories (see below)
+are available in that copy.
 
 Each check run may take up to 300 seconds, bounded by the session deadline. Set
 `--check-timeout SECONDS` (at most 3600) with `init`, `up` for a new project, or
 `configure`. Long output does not fail a check; the saved result keeps the last
 12,000 characters of each stream.
+
+## Dependency directories
+
+Each agent works in its own Git worktree, which contains only files Git tracks
+or could track. Installed dependencies are usually ignored, so the worktrees and
+check copies link to them instead. By default any ignored directory named
+`node_modules`, `.venv`, or `venv` is linked, at any depth. Build output such as
+Rust's `target/` is not linked, so the agents never build into the same
+directory.
+
+To link other ignored directories, list their names:
+
+```sh
+model-collab configure --dependency-dirs node_modules,.venv,vendor
+```
+
+An empty list (`--dependency-dirs ''`) links nothing. Linked directories are
+shared with your working tree, not copied.
 
 ## Command reference
 

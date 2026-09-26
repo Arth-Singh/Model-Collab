@@ -9,8 +9,12 @@ See [design](design.md) for why the protocol works this way.
 Starting a goal records a snapshot of the project, including uncommitted and
 untracked files, as a Git commit under `refs/model-collab/base`. Each peer gets a
 detached Git worktree of that snapshot at `.collab/work/<agent>`. Ignored
-dependency directories such as `node_modules` or `.venv` are linked into each
-worktree so tests can run; caches such as `__pycache__` are not.
+directories named in the `dependencyDirs` setting (by default `node_modules`,
+`.venv`, and `venv`, at any depth) are linked into each worktree so tests can
+run. Other ignored files, including build output and caches such as
+`__pycache__`, are not linked, so one agent's build cannot overwrite another's.
+Linked directories are shared with your working tree; an agent that installs
+packages into one changes it for everyone.
 
 1. **Solve.** Each peer changes files in its own worktree and submits one
    `proposal`. Status withholds other peers' messages and candidates until every
@@ -98,11 +102,14 @@ timeout (300 seconds by default). A check cannot alter the candidate it verifies
 Passing checks cover only what their commands test.
 
 On convergence the tool writes the candidate's changes into the user's working
-tree. It first compares every affected file with the base. If the user changed
-any of them in the meantime, nothing is written and the session records the
-conflict; resolve it and run `model-collab apply`. After a session ends, `apply
---candidate mN` applies any candidate, for example one of two unresolved
-alternatives.
+tree. It first compares every affected path with the base, including file
+contents, the executable bit, symlink targets, and parent directories. If the
+user changed any of them in the meantime, nothing is written and the session
+records the conflict; resolve it and run `model-collab apply`. Applying is all
+or nothing: if a write fails partway, the files already written are restored
+and the working tree is left as it was. Every attempt is recorded in the
+session's `applyLog`. After a session ends, `apply --candidate mN` applies any
+candidate, for example one of two unresolved alternatives.
 
 ## Waiting and human intervention
 

@@ -35,11 +35,22 @@ test('project setup and controls provide readable output while preserving JSON a
     await fs.readFile(path.join(root, 'AGENTS.md'), 'utf8'),
     'Existing project rules.\n',
   );
+  assert.match(await run('configure'), /Linked dependency directories: node_modules, .venv, venv/);
   const changed = JSON.parse(
-    await run('configure', '--minutes', '45', '--max-rounds', '6', '--json'),
+    await run(
+      'configure',
+      '--minutes',
+      '45',
+      '--max-rounds',
+      '6',
+      '--dependency-dirs',
+      'node_modules,target',
+      '--json',
+    ),
   );
   assert.equal(changed.deadlineMinutes, 45);
   assert.equal(changed.maxRounds, 6);
+  assert.deepEqual(changed.dependencyDirs, ['node_modules', 'target']);
   assert.match(await run('start', 'Inspect the project.'), /Goal: Inspect the project/);
   const denied = await runCommand([
     process.execPath,

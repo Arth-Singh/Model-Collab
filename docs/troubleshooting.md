@@ -93,16 +93,19 @@ complete saved configuration.
 
 A check runs in a fresh copy of the project with the candidate's changes, using
 its configured argument array. Verify that the command works from a clean
-checkout. Ignored dependency directories are linked into the copy, but tool
-caches such as `__pycache__` are not. Tools that write caches under your home
-directory may fail inside the agents' sandboxes; point them at a directory in
-the project. Workers already do this for Go.
+checkout. Only the ignored directories named in `dependencyDirs` are linked
+into the copy; see
+[dependency directories](configuration.md#dependency-directories). Build output
+and tool caches such as `__pycache__` are not. Tools that write caches under
+your home directory may fail inside the agents' sandboxes; point them at a
+directory in the project. Workers already do this for Go.
 
 ## The agreed change was not applied
 
 The agents agreed, but you edited one of the same files after the session
-started. Nothing was written. `model-collab status --human` names the files.
-Commit, stash, or restore your edits, then run `model-collab apply`.
+started, or a write failed. Nothing was written; a partial write is rolled
+back. `model-collab status --human` names the file or the error. Commit, stash,
+or restore your edits, then run `model-collab apply`.
 
 ## The transcript looks out of date
 

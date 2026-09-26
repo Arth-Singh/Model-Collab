@@ -538,3 +538,114 @@ test('wait observes peer revisions and terminal status; a blocker stops both pee
   assert.equal(result.session.stopReason, 'Required source is unavailable');
   await assert.rejects(collab.wait('claude', -2, 1), /revision/);
 });
+
+test('only listed dependency directories are linked; other ignored paths stay private', async (t) => {
+  const root = await gitProject(t, 'model-collab-links-', {
+    '.gitignore': 'node_modules/\nbuild/\n.env\ntarget/\n.collab/\n',
+    'packages/app/index.js': 'app\n',
+  });
+  for (const dir of ['node_modules/dep', 'packages/app/node_modules/lib', 'build', 'target'])
+    await fs.mkdir(path.join(root, dir), { recursive: true });
+  await fs.writeFile(path.join(root, 'build/out.js'), 'built\n');
+  await fs.writeFile(path.join(root, 'node_modules/dep/index.js'), 'dep\n');
+  await fs.writeFile(path.join(root, 'packages/app/node_modules/lib/index.js'), 'lib\n');
+  await fs.writeFile(path.join(root, 'target/out'), 'binary\n');
+  await fs.writeFile(path.join(root, '.env'), 'SECRET=1\n');
+  const collab = new Collaboration(root);
+  await collab.init();
+  await collab.start({ topic: 'Check links.' });
+  const ws = await workspace(collab, 'codex');
+  assert.ok((await fs.lstat(path.join(ws, 'node_modules'))).isSymbolicLink());
+  assert.ok((await fs.lstat(path.join(ws, 'packages/app/node_modules'))).isSymbolicLink());
+  for (const privatePath of ['build', 'target', '.env'])
+    await assert.rejects(fs.lstat(path.join(ws, privatePath)), { code: 'ENOENT' });
+  await collab.stop('Reconfigure.');
+  await collab.configure({ dependencyDirs: [] });
+  await collab.start({ topic: 'No links.' });
+  await assert.rejects(fs.lstat(path.join(await workspace(collab, 'codex'), 'node_modules')), {
+    code: 'ENOENT',
+  });
+  await assert.rejects(collab.configure({ dependencyDirs: ['../escape'] }));
+});
+
+async function agreed(t, files, change) {
+  const { root, collab } = await fixture(t, {}, files);
+  await change(await workspace(collab, 'codex'));
+  const [candidate] = await independent(collab);
+  return { root, collab, candidate };
+}
+
+test('apply refuses a candidate whose parent directory is now a user file, writing nothing', async (t) => {
+  const { root, collab, candidate } = await agreed(t, { 'a.txt': 'old a\n' }, async (ws) => {
+    await fs.writeFile(path.join(ws, 'a.txt'), 'new a\n');
+    await fs.mkdir(path.join(ws, 'src/utils'), { recursive: true });
+    await fs.writeFile(path.join(ws, 'src/utils/helpers.js'), 'helpers\n');
+  });
+  await fs.mkdir(path.join(root, 'src'));
+  await fs.writeFile(path.join(root, 'src/utils'), 'unrelated user file\n');
+  const result = await collab.post('claude', message('accept', { candidate }));
+  assert.match(result.applied.error, /you changed src\/utils/);
+  assert.equal(await fs.readFile(path.join(root, 'a.txt'), 'utf8'), 'old a\n');
+  assert.equal(await fs.readFile(path.join(root, 'src/utils'), 'utf8'), 'unrelated user file\n');
+});
+
+test('a write failure during apply restores the files already written', async (t) => {
+  const { root, collab, candidate } = await agreed(
+    t,
+    { 'a.txt': 'old a\n', 'locked/b.txt': 'old b\n' },
+    async (ws) => {
+      await fs.writeFile(path.join(ws, 'a.txt'), 'new a\n');
+      await fs.writeFile(path.join(ws, 'locked/b.txt'), 'new b\n');
+    },
+  );
+  await fs.chmod(path.join(root, 'locked'), 0o555);
+  const result = await collab
+    .post('claude', message('accept', { candidate }))
+    .finally(() => fs.chmod(path.join(root, 'locked'), 0o755));
+  assert.match(result.applied.error, /left as it was/);
+  assert.equal(await fs.readFile(path.join(root, 'a.txt'), 'utf8'), 'old a\n');
+  assert.equal(await fs.readFile(path.join(root, 'locked/b.txt'), 'utf8'), 'old b\n');
+  assert.equal((await collab.status()).session.applyLog.length, 1);
+});
+
+test('apply treats a user permission change as a conflict and applies executable-bit changes', async (t) => {
+  const conflict = await agreed(t, { 'run.sh': 'echo old\n' }, (ws) =>
+    fs.writeFile(path.join(ws, 'run.sh'), 'echo new\n'),
+  );
+  await fs.chmod(path.join(conflict.root, 'run.sh'), 0o755);
+  const refused = await conflict.collab.post(
+    'claude',
+    message('accept', { candidate: conflict.candidate }),
+  );
+  assert.match(refused.applied.error, /you changed run.sh/);
+  assert.equal((await fs.stat(path.join(conflict.root, 'run.sh'))).mode & 0o111, 0o111);
+  const modeOnly = await agreed(t, { 'run.sh': 'echo same\n' }, (ws) =>
+    fs.chmod(path.join(ws, 'run.sh'), 0o755),
+  );
+  const applied = await modeOnly.collab.post(
+    'claude',
+    message('accept', { candidate: modeOnly.candidate }),
+  );
+  assert.deepEqual(applied.applied.files, ['run.sh']);
+  assert.notEqual((await fs.stat(path.join(modeOnly.root, 'run.sh'))).mode & 0o111, 0);
+});
+
+test('apply can replace a file with a directory of the same name', async (t) => {
+  const { root, collab, candidate } = await agreed(t, { utils: 'old module\n' }, async (ws) => {
+    await fs.rm(path.join(ws, 'utils'));
+    await fs.mkdir(path.join(ws, 'utils'));
+    await fs.writeFile(path.join(ws, 'utils/index.js'), 'new module\n');
+  });
+  const result = await collab.post('claude', message('accept', { candidate }));
+  assert.deepEqual(result.applied.files, ['utils', 'utils/index.js']);
+  assert.equal(await fs.readFile(path.join(root, 'utils/index.js'), 'utf8'), 'new module\n');
+});
+
+test('review checkouts are removed when the session ends', async (t) => {
+  const { collab } = await fixture(t);
+  const [candidate] = await independent(collab);
+  const review = await collab.checkout('claude', candidate);
+  await assert.doesNotReject(fs.access(review.path));
+  await collab.stop('Done reviewing.');
+  await assert.rejects(fs.access(path.join(collab.dir, 'review')), { code: 'ENOENT' });
+});

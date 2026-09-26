@@ -15,6 +15,16 @@ export const configSchema = z
     maxMessages: z.number().int().min(4).max(100).default(24),
     deadlineMinutes: z.number().min(0.01).max(240).default(30),
     checkTimeoutSeconds: z.number().int().min(1).max(3600).default(300),
+    // Ignored directories, by name, that worktrees and checkouts link to.
+    dependencyDirs: z
+      .array(
+        z
+          .string()
+          .regex(/^[^/\\]+$/)
+          .refine((name) => !['.', '..', '.git', '.collab'].includes(name)),
+      )
+      .max(20)
+      .default(['node_modules', '.venv', 'venv']),
     checks: z
       .record(
         z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/),

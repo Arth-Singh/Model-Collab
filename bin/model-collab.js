@@ -3,7 +3,7 @@ import { Command } from 'commander';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { Collaboration } from '../src/core.js';
-import { sessionIdSchema } from '../src/schema.js';
+import { configSchema, sessionIdSchema } from '../src/schema.js';
 import { launch, serverConfig, writeInstructions } from '../src/setup.js';
 import { renderStartup, renderStatus, renderWorkerEvent } from '../src/display.js';
 import { DEFAULT_EFFORT, DEFAULT_MODELS } from '../src/native.js';
@@ -120,6 +120,11 @@ withRepo(
   .option('--max-rounds <n>', 'Discussion round limit', Number)
   .option('--max-messages <n>', 'Contribution limit', Number)
   .option('--check-timeout <seconds>', 'Timeout for each check run', Number)
+  .option(
+    '--dependency-dirs <names>',
+    'Comma-separated ignored directories to link into worktrees',
+    list,
+  )
   .option('--checks <json>', 'Named verification commands as JSON, or @file')
   .option('--json', 'Print the saved configuration as JSON')
   .action(async (opts) => {
@@ -130,6 +135,7 @@ withRepo(
         maxRounds: opts.maxRounds,
         maxMessages: opts.maxMessages,
         checkTimeoutSeconds: opts.checkTimeout,
+        dependencyDirs: opts.dependencyDirs,
         checks: opts.checks === undefined ? undefined : await jsonInput(opts.checks),
       }).filter(([, value]) => value !== undefined),
     );
@@ -140,11 +146,12 @@ withRepo(
       await writeInstructions(path.resolve(opts.repo), state.config.participants, {
         preset: state.config.preset,
       });
-    const config = state.config;
+    // Parsing fills defaults for settings added after the project was initialized.
+    const config = configSchema.parse(state.config);
     output(
       opts.json
         ? config
-        : `Project settings\nPreset: ${config.preset}\nLimits: ${config.maxRounds} rounds, ${config.maxMessages} contributions, ${config.deadlineMinutes} minutes\nChecks: ${Object.keys(config.checks).join(', ') || 'none'} (timeout ${config.checkTimeoutSeconds ?? 300} seconds)\nThese settings apply to new goals.`,
+        : `Project settings\nPreset: ${config.preset}\nLimits: ${config.maxRounds} rounds, ${config.maxMessages} contributions, ${config.deadlineMinutes} minutes\nChecks: ${Object.keys(config.checks).join(', ') || 'none'} (timeout ${config.checkTimeoutSeconds} seconds)\nLinked dependency directories: ${config.dependencyDirs.join(', ') || 'none'}\nThese settings apply to new goals.`,
     );
   });
 
@@ -174,6 +181,11 @@ withRepo(
   .option('--max-messages <n>', 'Hard cap on contributions', Number, 24)
   .option('--minutes <n>', 'Wall-clock session limit', Number, 30)
   .option('--check-timeout <seconds>', 'Timeout for each check run', Number, 300)
+  .option(
+    '--dependency-dirs <names>',
+    'Comma-separated ignored directories to link into worktrees',
+    list,
+  )
   .option('--checks <json>', 'JSON object of check names to argv arrays, or @file', '{}')
   .option('--json', 'Print initialized project settings as JSON')
   .action(async (opts) => {
@@ -184,6 +196,7 @@ withRepo(
       maxMessages: opts.maxMessages,
       deadlineMinutes: opts.minutes,
       checkTimeoutSeconds: opts.checkTimeout,
+      dependencyDirs: opts.dependencyDirs,
       checks: await jsonInput(opts.checks),
     });
     await writeInstructions(path.resolve(opts.repo), state.config.participants, {
