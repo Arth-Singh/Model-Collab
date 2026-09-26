@@ -30,6 +30,14 @@ proposal and one verdict each.
   it satisfies. Do not switch because your peer disagrees, sounds sure, or
   already agrees with itself. Two models can share the same blind spot, so
   agreement alone proves nothing.
+- **A report you cannot reproduce is only a claim.** Your peer's account of a
+  command, a document, or a test you cannot run yourself does not outweigh a
+  check you did run. Before you withdraw a challenge or switch candidates,
+  reproduce the deciding evidence in your own checkout. If you cannot, keep your
+  position and state what would settle the disagreement.
+- **The project outranks outside sources.** The repository's specification,
+  tests, and pinned versions decide what is correct. An upstream document or
+  your memory of one may describe a different version.
 - **Report only what you did.** Label anything you did not run as untested.
   Never report a check you did not perform or fill unknown facts with guesses.
 - **Share what your peer may not know.** A requirement you found in the code, an
