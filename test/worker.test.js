@@ -196,30 +196,73 @@ test(
 );
 
 test(
-  'transport failure and invalid output surface once without automatic model retries',
+  'transport failures surface once; a rejected message gets exactly one correction',
   { timeout: 5000 },
   async (t) => {
     for (const invalid of [false, true]) {
       const { root, collab } = await fixture(t);
       let calls = 0;
+      const rejections = [];
       await assert.rejects(
         runWorker({
           root,
           agent: 'codex',
-          turn: async () => {
+          turn: async ({ rejection }) => {
             calls++;
+            rejections.push(rejection);
             if (invalid) return { ...proposal(), kind: 'invented-message-kind' };
             throw new Error('Simulated model transport failure');
           },
         }),
         invalid ? /Invalid option|Invalid enum|Invalid input/ : /Simulated model transport failure/,
       );
-      assert.equal(calls, 1);
+      assert.equal(calls, invalid ? 2 : 1);
+      if (invalid) {
+        assert.equal(rejections[0], null);
+        assert.match(rejections[1], /Invalid option|Invalid enum|Invalid input/);
+      }
       assert.equal((await collab.status()).session.messages.length, 0);
       const retryByUser = await runWorker({ root, agent: 'codex', turn: async () => blocked() });
       assert.equal(retryByUser.calls, 1);
       assert.equal(retryByUser.status, 'blocked');
     }
+  },
+);
+
+test(
+  'a corrected message after a protocol rejection is posted and the session continues',
+  { timeout: 5000 },
+  async (t) => {
+    const { root, collab } = await fixture(t);
+    const events = [];
+    const turns = [];
+    const result = await runWorker({
+      root,
+      agent: 'codex',
+      onEvent: (event) => {
+        events.push(event);
+        if (event.event === 'sent') post(collab, 'claude', blocked());
+      },
+      turn: async ({ rejection }) => {
+        turns.push(rejection);
+        if (turns.length === 1)
+          return { kind: 'accept', candidate: 'm1', summary: 'Premature.', evidence: ['None.'] };
+        return proposal();
+      },
+    });
+    assert.equal(turns.length, 2);
+    assert.equal(turns[0], null);
+    assert.match(turns[1], /independent proposal/);
+    assert.deepEqual(result, { status: 'blocked', winner: null, calls: 2 });
+    const state = await collab.status();
+    assert.deepEqual(
+      state.session.messages.map((message) => [message.agent, message.kind]),
+      [
+        ['codex', 'proposal'],
+        ['claude', 'blocked'],
+      ],
+    );
+    assert.equal(events.filter((event) => event.event === 'rejected').length, 1);
   },
 );
 

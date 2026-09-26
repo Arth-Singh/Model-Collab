@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
+import { DEFAULT_MODELS } from './native.js';
 
 export const binPath = fileURLToPath(new URL('../bin/model-collab.js', import.meta.url));
 export const peerContract = await fs.readFile(
@@ -18,12 +19,15 @@ export const researchContract = await fs.readFile(
 );
 const shellQuote = (value) => "'" + value.replaceAll("'", "'\\''") + "'";
 
-export function serverConfig(root, agent) {
-  return {
-    command: process.execPath,
-    args: [binPath, 'serve', '--repo', path.resolve(root), '--agent', agent],
-  };
+export function serverConfig(root, agent, { contract = true } = {}) {
+  const args = [binPath, 'serve', '--repo', path.resolve(root), '--agent', agent];
+  if (!contract) args.push('--no-contract');
+  return { command: process.execPath, args };
 }
+
+// Codex stops waiting for an MCP tool after 60 seconds by default; configured
+// checks may legitimately run longer.
+export const CODEX_TOOL_TIMEOUT_SECONDS = 3600;
 
 export async function writeInstructions(root, participants, { preset = 'coding' } = {}) {
   const dir = path.join(root, '.collab');
@@ -84,7 +88,7 @@ export async function launch(root, agent, { model, effort = 'xhigh', print = fal
       'Launch supports codex or claude; other participants may connect through serve.',
     );
   const prompt = `Stay in this visible interactive session. Read .collab/START-${agent.toUpperCase()}.md and .collab/CONTEXT.md, then follow those instructions to collaborate as ${agent}. Do not launch background workers. The user can interrupt or steer you in this pane.`;
-  const config = serverConfig(root, agent);
+  const config = serverConfig(root, agent, { contract: false });
   const interactiveInstructions = await fs.readFile(
     path.join(root, '.collab', `START-${agent.toUpperCase()}.md`),
     'utf8',
@@ -96,18 +100,20 @@ export async function launch(root, agent, { model, effort = 'xhigh', print = fal
           '-C',
           path.resolve(root),
           '-m',
-          model ?? 'gpt-6-astra',
+          model ?? DEFAULT_MODELS.codex,
           '-c',
           `model_reasoning_effort=${JSON.stringify(effort)}`,
           '-c',
           `mcp_servers.model_collab.command=${JSON.stringify(config.command)}`,
           '-c',
           `mcp_servers.model_collab.args=${JSON.stringify(config.args)}`,
+          '-c',
+          `mcp_servers.model_collab.tool_timeout_sec=${CODEX_TOOL_TIMEOUT_SECONDS}`,
           prompt,
         ]
       : [
           '--model',
-          model ?? 'claude-fable-5-1[1m]',
+          model ?? DEFAULT_MODELS.claude,
           '--effort',
           effort,
           '--mcp-config',

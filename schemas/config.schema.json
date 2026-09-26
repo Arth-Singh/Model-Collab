@@ -39,6 +39,12 @@
       "minimum": 0.01,
       "maximum": 240
     },
+    "checkTimeoutSeconds": {
+      "default": 300,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3600
+    },
     "checks": {
       "default": {},
       "type": "object",

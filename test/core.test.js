@@ -168,6 +168,31 @@ test('required checks and current artifact hashes gate acceptance', async (t) =>
   );
 });
 
+test('verbose passing checks pass with a truncated tail and slow checks honor the project timeout', async (t) => {
+  const { root, collab } = await fixture(t, {
+    checkTimeoutSeconds: 1,
+    checks: {
+      verbose: [
+        process.execPath,
+        '-e',
+        'process.stdout.write("x".repeat(500000) + "\\nSUMMARY: all passed\\n")',
+      ],
+      slow: [process.execPath, '-e', 'setTimeout(() => {}, 5000)'],
+    },
+  });
+  await fs.writeFile(path.join(root, 'answer.txt'), 'correct');
+  const [candidate] = await independent(collab, { files: ['answer.txt'] });
+  const verbose = await collab.verify('codex', candidate, 'verbose');
+  assert.equal(verbose.passed, true);
+  assert.equal(verbose.outputTruncated, true);
+  assert.ok(verbose.stdout.length <= 12000);
+  assert.match(verbose.stdout, /SUMMARY: all passed\n$/);
+  const slow = await collab.verify('codex', candidate, 'slow');
+  assert.equal(slow.passed, false);
+  assert.equal(slow.error, 'timeout');
+  assert.ok(slow.durationMs < 4000);
+});
+
 test('checks that modify a proposed artifact cannot certify the stale candidate', async (t) => {
   const { root, collab } = await fixture(t, {
     checks: {

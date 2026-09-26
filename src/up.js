@@ -7,7 +7,8 @@ import { Collaboration } from './core.js';
 import { configSchema, startSchema, sessionIdSchema } from './schema.js';
 import { binPath, writeInstructions } from './setup.js';
 import { runCommand } from './process.js';
-import { runWorker } from './worker.js';
+import { runWorker, DEFAULT_TURN_TIMEOUT_MS } from './worker.js';
+import { DEFAULT_MODELS } from './native.js';
 
 const SOCKET = 'model-collab';
 const digest = (text) => createHash('sha256').update(text).digest('hex').slice(0, 10);
@@ -26,6 +27,7 @@ export async function planUp({
   minutes = 30,
   maxRounds = 4,
   maxMessages = 24,
+  checkTimeoutSeconds,
   criteria = [],
 } = {}) {
   root = await fs.realpath(root);
@@ -46,6 +48,7 @@ export async function planUp({
         deadlineMinutes: minutes,
         maxRounds,
         maxMessages,
+        checkTimeoutSeconds,
         checks: checks ?? {},
       });
   if (preset && config.preset !== preset)
@@ -72,8 +75,8 @@ export async function planUp({
     config,
     ui,
     models: {
-      codex: models.codex ?? 'gpt-6-astra',
-      claude: models.claude ?? 'claude-fable-5-1[1m]',
+      codex: models.codex ?? DEFAULT_MODELS.codex,
+      claude: models.claude ?? DEFAULT_MODELS.claude,
     },
     effort,
     initialized: Boolean(existing),
@@ -264,6 +267,20 @@ export async function up(options = {}) {
     });
     const controller = new AbortController();
     const abort = () => controller.abort();
+    // Both workers observe every message and the final status; report each once.
+    const reported = new Set();
+    const onEvent = (event) => {
+      const key = ['message', 'sent'].includes(event.event)
+        ? event.id
+        : event.event === 'complete'
+          ? 'complete'
+          : null;
+      if (key) {
+        if (reported.has(key)) return;
+        reported.add(key);
+      }
+      options.onEvent?.(event);
+    };
     options.signal?.addEventListener('abort', abort, { once: true });
     if (options.signal?.aborted) abort();
     try {
@@ -274,9 +291,9 @@ export async function up(options = {}) {
             agent,
             model: plan.models[agent],
             effort: plan.effort,
-            timeoutMs: options.timeoutMs ?? 120000,
+            timeoutMs: options.timeoutMs ?? DEFAULT_TURN_TIMEOUT_MS,
             signal: controller.signal,
-            onEvent: options.onEvent,
+            onEvent,
             turn: options.turn,
           }).catch((error) => {
             controller.abort();

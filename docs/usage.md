@@ -135,6 +135,17 @@ Workers print contributions to the current terminal and start a CLI turn only
 when a peer can contribute. They wait locally between turns and stop on agreement,
 a limit, a blocker, or a transport error. Ctrl-C cancels the worker processes.
 
-Workers use bounded, noninteractive CLI permissions. Some operations that work
-in an interactive agent may need your approval there instead. Use native panes
-when you want to see and direct the agents' individual tool calls.
+Each model turn may take up to 15 minutes by default; change this with
+`--turn-timeout SECONDS`. If the protocol rejects a message, for example an
+acceptance while a challenge is still open, the worker asks that agent for one
+corrected message before giving up. A note you add during a turn discards that
+turn's output and the agent starts again with your note.
+
+Workers run noninteractively inside each client's sandbox. Codex uses
+`workspace-write`. Claude Code runs shell commands in its OS sandbox, which limits
+writes to the project and temporary directories and blocks network access. Both
+agents can edit files and run local tests; commands that need the network or
+paths outside the project will fail. Toolchains that write caches under your
+home directory need a cache inside the project; for Go, start workers with
+`GOCACHE="$PWD/.gocache"` and ignore that directory. Use native panes when you
+want to approve or direct the agents' individual tool calls.

@@ -250,10 +250,12 @@ test(
   async (t) => {
     const { root } = await fixture(t);
     const turns = [];
+    const events = [];
     const result = await up({
       root,
       goal: 'Check the overlap predicate.',
       ui: 'workers',
+      onEvent: (event) => events.push(event),
       turn: async ({ agent, state }) => {
         turns.push(agent);
         if (state.session.phase === 'independent')
@@ -280,6 +282,11 @@ test(
       result.peers.map((peer) => peer.calls),
       [2, 2],
     );
+    const reported = events
+      .filter((event) => ['message', 'sent'].includes(event.event))
+      .map((event) => event.id);
+    assert.deepEqual(reported.toSorted(), ['m1', 'm2', 'm3', 'm4']);
+    assert.equal(events.filter((event) => event.event === 'complete').length, 1);
   },
 );
 

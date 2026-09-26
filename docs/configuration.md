@@ -33,6 +33,8 @@ experiment-planning instructions, plus `.collab/RESEARCH.md`.
 | Discussion rounds | 4          |
 | Contributions     | 24         |
 | Conversation time | 30 minutes |
+| Check timeout     | 300 s      |
+| Worker turn limit | 900 s      |
 
 The independent proposal phase precedes discussion rounds. Each peer gets one
 contribution per round. The first limit reached ends the conversation without
@@ -84,6 +86,11 @@ model-collab init --checks @checks.json
 The agents must run all configured checks before accepting a proposal. Checks
 run in the project directory without a shell, so shell operators such as `&&`
 are not interpreted. Put complex checks in a script and invoke that script.
+
+Each check run may take up to 300 seconds, bounded by the session deadline. Set
+`--check-timeout SECONDS` (at most 3600) with `init`, `up` for a new project, or
+`configure`. Long output does not fail a check; the saved result keeps the last
+12,000 characters of each stream.
 
 ## Command reference
 

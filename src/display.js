@@ -46,6 +46,10 @@ export function renderWorkerEvent(event) {
   if (event.event === 'thinking') return `[${event.agent}] Working on round ${event.round}.`;
   if (event.event === 'sent' || event.event === 'message')
     return `[${event.agent}] ${event.kind}: ${event.summary}`;
+  if (event.event === 'rejected')
+    return `[${event.agent}] Message rejected; asking for one correction: ${event.reason}`;
+  if (event.event === 'discarded')
+    return `[${event.agent}] Discarded a turn prepared before your latest note.`;
   if (event.event === 'complete')
     return `Session ${event.status}${event.reason ? `: ${event.reason}` : '.'}`;
   return null;

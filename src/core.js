@@ -159,6 +159,9 @@ export class Collaboration {
       const view = structuredClone(state),
         s = view.session;
       if (!s) return view;
+      // Replay hashes are internal bookkeeping; peers only need the content.
+      if (agent) s.messages = s.messages.map(({ fingerprint, semantic, ...message }) => message);
+      s.roundsRemaining = Math.max(0, state.config.maxRounds - s.round);
       if (agent && s.phase === 'independent' && (active(s) || s.status === 'paused')) {
         s.messages = s.messages.filter((m) => m.agent === agent);
         s.candidates = s.candidates.filter((c) => c.agent === agent);
@@ -186,7 +189,14 @@ export class Collaboration {
   }
 
   async configure(changes = {}) {
-    const allowed = new Set(['preset', 'maxRounds', 'maxMessages', 'deadlineMinutes', 'checks']);
+    const allowed = new Set([
+      'preset',
+      'maxRounds',
+      'maxMessages',
+      'deadlineMinutes',
+      'checkTimeoutSeconds',
+      'checks',
+    ]);
     if (Object.keys(changes).some((key) => !allowed.has(key))) fail('Unsupported project setting.');
     return this.transaction((state) => {
       if (active(state.session) || state.session?.status === 'paused') {
@@ -514,12 +524,18 @@ export class Collaboration {
         contextVersion: s.contextVersion ?? 0,
         candidate,
         argv,
+        // Projects initialized before checkTimeoutSeconds existed keep the default.
+        timeoutMs: (state.config.checkTimeoutSeconds ?? 300) * 1000,
         deadline: s.deadlineAt,
       };
     });
     const result = await runCommand(captured.argv, {
       cwd: this.root,
-      timeoutMs: Math.max(1, Math.min(60000, Date.parse(captured.deadline) - Date.now())),
+      timeoutMs: Math.max(
+        1,
+        Math.min(captured.timeoutMs, Date.parse(captured.deadline) - Date.now()),
+      ),
+      maxBytes: 12000,
     });
     return this.transaction(async (state) => {
       const s = this.requireActive(state);
@@ -534,10 +550,12 @@ export class Collaboration {
         agent,
         timestamp: now(),
         passed: result.code === 0 && !result.error,
-        ...result,
-        stdout: result.stdout.slice(-12000),
-        stderr: result.stderr.slice(-12000),
-        outputTruncated: result.stdout.length > 12000 || result.stderr.length > 12000,
+        code: result.code,
+        error: result.error,
+        durationMs: result.durationMs,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        outputTruncated: result.truncated,
       };
       s.checks = s.checks.filter((c) => !(c.candidate === candidateId && c.name === name));
       s.checks.push(record);

@@ -6,6 +6,8 @@ import { Collaboration } from '../src/core.js';
 import { sessionIdSchema } from '../src/schema.js';
 import { launch, serverConfig, writeInstructions } from '../src/setup.js';
 import { renderStartup, renderStatus, renderWorkerEvent } from '../src/display.js';
+import { DEFAULT_MODELS } from '../src/native.js';
+import { DEFAULT_TURN_TIMEOUT_MS } from '../src/worker.js';
 
 const { version } = JSON.parse(
   await fs.readFile(new URL('../package.json', import.meta.url), 'utf8'),
@@ -49,10 +51,12 @@ withRepo(
   .option('--max-rounds <n>', 'New-project discussion round cap', Number, 4)
   .option('--max-messages <n>', 'New-project message cap', Number, 24)
   .option('--checks <json>', 'New-project named checks as argv arrays, or @file')
+  .option('--check-timeout <seconds>', 'New-project timeout for each check run', Number)
   .option('--criteria <text...>', 'Success criteria')
   .option('--effort <level>', 'Reasoning effort', 'xhigh')
-  .option('--codex-model <model>', 'Codex model', 'gpt-6-astra')
-  .option('--claude-model <model>', 'Claude model', 'claude-fable-5-1[1m]')
+  .option('--turn-timeout <seconds>', 'Workers: time limit for one model turn', Number, 900)
+  .option('--codex-model <model>', 'Codex model', DEFAULT_MODELS.codex)
+  .option('--claude-model <model>', 'Claude model', DEFAULT_MODELS.claude)
   .action(async (goal, opts) => {
     const { up, attachTerminal } = await import('../src/up.js');
     const controller = new AbortController(),
@@ -71,8 +75,10 @@ withRepo(
         maxRounds: opts.maxRounds,
         maxMessages: opts.maxMessages,
         checks: opts.checks ? await jsonInput(opts.checks) : undefined,
+        checkTimeoutSeconds: opts.checkTimeout,
         criteria: opts.criteria,
         effort: opts.effort,
+        timeoutMs: opts.turnTimeout * 1000,
         models: { codex: opts.codexModel, claude: opts.claudeModel },
         signal: controller.signal,
         onEvent: (event) => {
@@ -113,6 +119,7 @@ withRepo(
   .option('--minutes <n>', 'Conversation time limit', Number)
   .option('--max-rounds <n>', 'Discussion round limit', Number)
   .option('--max-messages <n>', 'Contribution limit', Number)
+  .option('--check-timeout <seconds>', 'Timeout for each check run', Number)
   .option('--checks <json>', 'Named verification commands as JSON, or @file')
   .option('--json', 'Print the saved configuration as JSON')
   .action(async (opts) => {
@@ -122,6 +129,7 @@ withRepo(
         deadlineMinutes: opts.minutes,
         maxRounds: opts.maxRounds,
         maxMessages: opts.maxMessages,
+        checkTimeoutSeconds: opts.checkTimeout,
         checks: opts.checks === undefined ? undefined : await jsonInput(opts.checks),
       }).filter(([, value]) => value !== undefined),
     );
@@ -136,7 +144,7 @@ withRepo(
     output(
       opts.json
         ? config
-        : `Project settings\nPreset: ${config.preset}\nLimits: ${config.maxRounds} rounds, ${config.maxMessages} contributions, ${config.deadlineMinutes} minutes\nChecks: ${Object.keys(config.checks).join(', ') || 'none'}\nThese settings apply to new goals.`,
+        : `Project settings\nPreset: ${config.preset}\nLimits: ${config.maxRounds} rounds, ${config.maxMessages} contributions, ${config.deadlineMinutes} minutes\nChecks: ${Object.keys(config.checks).join(', ') || 'none'} (timeout ${config.checkTimeoutSeconds ?? 300} seconds)\nThese settings apply to new goals.`,
     );
   });
 
@@ -165,6 +173,7 @@ withRepo(
   .option('--max-rounds <n>', 'Discussion rounds after independent proposals', Number, 4)
   .option('--max-messages <n>', 'Hard cap on contributions', Number, 24)
   .option('--minutes <n>', 'Wall-clock session limit', Number, 30)
+  .option('--check-timeout <seconds>', 'Timeout for each check run', Number, 300)
   .option('--checks <json>', 'JSON object of check names to argv arrays, or @file', '{}')
   .option('--json', 'Print initialized project settings as JSON')
   .action(async (opts) => {
@@ -174,6 +183,7 @@ withRepo(
       maxRounds: opts.maxRounds,
       maxMessages: opts.maxMessages,
       deadlineMinutes: opts.minutes,
+      checkTimeoutSeconds: opts.checkTimeout,
       checks: await jsonInput(opts.checks),
     });
     await writeInstructions(path.resolve(opts.repo), state.config.participants, {
@@ -301,6 +311,7 @@ withRepo(
 )
   .requiredOption('--agent <id>')
   .option('--worker-tools', 'Expose only read, claim, release, and verification tools')
+  .option('--no-contract', 'Omit the peer contract from server instructions')
   .action(async (opts) => {
     const { serve } = await import('../src/server.js');
     await serve(opts.repo, opts.agent, opts);
@@ -355,7 +366,7 @@ withRepo(
   .requiredOption('--agent <id>')
   .option('--model <model>')
   .option('--effort <level>', 'Reasoning effort', 'xhigh')
-  .option('--timeout <ms>', 'Per-turn timeout', Number, 120000)
+  .option('--timeout <ms>', 'Per-turn timeout', Number, DEFAULT_TURN_TIMEOUT_MS)
   .action(async (opts) => {
     const { runWorker } = await import('../src/worker.js');
     const controller = new AbortController();

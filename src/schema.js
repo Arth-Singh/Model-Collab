@@ -14,6 +14,7 @@ export const configSchema = z
     maxRounds: z.number().int().min(1).max(12).default(4),
     maxMessages: z.number().int().min(4).max(100).default(24),
     deadlineMinutes: z.number().min(0.01).max(240).default(30),
+    checkTimeoutSeconds: z.number().int().min(1).max(3600).default(300),
     checks: z
       .record(
         z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/),

@@ -7,12 +7,14 @@ sessions use CLI commands or MCP tools; both interfaces share the same protocol.
 
 Each peer first proposes independently. The filtered API withholds the other
 proposal until all peers have contributed. Discussion then advances in rounds,
-with at most one contribution from each peer in a round.
+with at most one contribution from each peer in a round. Status includes
+`roundsRemaining` so peers can plan the final round.
 
-The prompts keep shared source and test files unchanged during the independent
-phase, so one peer's edits do not reveal its proposed fix to the other. Peers then
-claim paths and implement during discussion. This is a cooperation rule; the
-filesystem does not enforce it.
+The prompts have each peer build and test its independent proposal in a scratch
+copy outside the repository and leave shared files unchanged, so one peer's edits
+do not reveal its fix to the other. During discussion, one peer integrates the
+chosen change into the shared files while the other reviews. This is a
+cooperation rule; the filesystem does not enforce it.
 
 A proposal describes a concrete solution. A challenge names an objection to a
 proposal; only its author can close that objection. Evidence messages add a
@@ -79,8 +81,9 @@ proposal. All configured checks must pass before acceptance:
 model-collab verify --agent codex --candidate m1 --check test
 ```
 
-Checks execute as argument arrays without a shell. File hashes cover declared
-artifacts only, and checks cover the behavior their commands actually test.
+Checks execute as argument arrays without a shell, with the project's check
+timeout (300 seconds by default). File hashes cover declared artifacts only, and
+checks cover the behavior their commands actually test.
 
 ## Waiting and human intervention
 
