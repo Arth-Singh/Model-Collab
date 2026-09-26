@@ -169,7 +169,7 @@ turn's output and the agent starts again with your note.
 Workers run noninteractively inside each client's sandbox, in the agent's
 worktree. Codex uses `workspace-write`. Claude Code runs shell commands in its OS
 sandbox, which limits writes to the worktree and temporary directories and blocks
-network access. Both
+network access. Neither agent can search the web in worker mode. Both
 agents can edit files and run local tests; commands that need the network or
 paths outside the worktree will fail. Workers point Go's build cache at
 `.gocache` inside each worktree; other toolchains that write caches under your

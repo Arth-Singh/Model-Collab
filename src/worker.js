@@ -115,6 +115,9 @@ SHARED CONTEXT\n${context || '(none)'}\n\nFILTERED SESSION\n${JSON.stringify(sta
           'approval_policy="never"',
           '-c',
           `model_reasoning_effort=${JSON.stringify(effort)}`,
+          // Claude's worker has no web tools and both shells are offline; keep peers equal.
+          '-c',
+          'web_search="disabled"',
           '-c',
           `mcp_servers.model_collab.command=${JSON.stringify(config.command)}`,
           '-c',
