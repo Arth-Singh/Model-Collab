@@ -167,6 +167,9 @@ SHARED CONTEXT\n${context || '(none)'}\n\nFILTERED SESSION\n${JSON.stringify(sta
         ];
   const result = await runProcess(agent, args, {
     cwd: workspace,
+    // Sandboxed agents cannot write Go's default cache under the home directory.
+    // Snapshots never capture .gocache.
+    env: { ...process.env, GOCACHE: path.join(workspace, '.gocache') },
     input: prompt,
     timeoutMs,
     deadlineMs: Date.parse(state.session.deadlineAt),

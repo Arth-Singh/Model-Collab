@@ -96,7 +96,7 @@ its configured argument array. Verify that the command works from a clean
 checkout. Ignored dependency directories are linked into the copy, but tool
 caches such as `__pycache__` are not. Tools that write caches under your home
 directory may fail inside the agents' sandboxes; point them at a directory in
-the project, for example `GOCACHE="$PWD/.gocache"` for Go.
+the project. Workers already do this for Go.
 
 ## The agreed change was not applied
 

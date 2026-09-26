@@ -171,7 +171,7 @@ worktree. Codex uses `workspace-write`. Claude Code runs shell commands in its O
 sandbox, which limits writes to the worktree and temporary directories and blocks
 network access. Both
 agents can edit files and run local tests; commands that need the network or
-paths outside the project will fail. Toolchains that write caches under your
-home directory need a cache inside the project; for Go, start workers with
-`GOCACHE="$PWD/.gocache"` and ignore that directory. Use native panes when you
-want to approve or direct the agents' individual tool calls.
+paths outside the worktree will fail. Workers point Go's build cache at
+`.gocache` inside each worktree; other toolchains that write caches under your
+home directory may need a similar setting. Use native panes when you want to
+approve or direct the agents' individual tool calls.
