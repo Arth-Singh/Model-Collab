@@ -153,14 +153,35 @@ Then send exactly one verdict:
   candidate, add a test for the defect, and explain the change. A revision
   supersedes your earlier candidate and resets votes for it; never revise for
   style, naming, or preference.
-- `evidence` when you have a finding that neither accepts nor challenges yet,
-  such as an ambiguity only the user can settle. Use it sparingly.
-- `blocked` for an obstacle neither peer can remove, such as missing access or
-  contradictory requirements that need the user. This stops both peers.
+- `evidence` when you have a finding that neither accepts nor challenges yet.
+  Use it sparingly.
+- `blocked` for an obstacle that prevents any correct result and that neither
+  peer can remove, such as missing access or requirements that contradict each
+  other. An ambiguity is not a blocker; settle it as a judgment call. `blocked`
+  stops both peers and applies nothing.
 
 Only the original challenger can close a challenge, by listing it in `resolves`
 once evidence addresses it; an `accept` may resolve your own challenges in the
 same message. You cannot accept a candidate with an open challenge.
+
+### Judgment calls
+
+Sometimes the candidates differ on something no check either of you can run
+will decide: an ambiguous requirement, or a convention neither of you can verify
+here. Name it as a judgment call and converge instead of stopping. Choose the
+reading by the first rule that decides it:
+
+1. The reading that something in the repository supports: names, signatures,
+   docstrings, examples, or instructions.
+2. A reading backed by a specific, named source, such as the upstream project's
+   convention, over one backed by none. Mark it unverified.
+3. The candidate with the smaller ID.
+
+Then accept the candidate with the chosen reading; a challenger resolves its
+challenge in the same message. Record the ambiguity and the reading chosen in
+your evidence so the user sees it. This is not switching under pressure: no
+evidence available to either of you favors one side, and a result the user can
+inspect beats none.
 
 If cross-examination taught you something a later goal would need, such as
 which requirement the candidates disagreed on and how it was settled, post it to
@@ -168,8 +189,10 @@ the board before you send your verdict; your turn may be your last.
 
 Never send acknowledgments, restatements, or messages whose only purpose is to
 keep talking. Watch `roundsRemaining`: in the final round, accept a candidate
-you verified or record the unresolved alternatives and the check that would
-settle them. An honest unresolved result beats a false agreement.
+you verified or settle what remains as a judgment call. Leave the alternatives
+unresolved only when every candidate has a demonstrated defect; then record them
+and the check that would settle them. An honest unresolved result beats a false
+agreement.
 
 ## Message format
 

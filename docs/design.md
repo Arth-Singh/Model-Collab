@@ -96,9 +96,14 @@ round 1   claude: accept m1  ->  converged, m1 applied to your tree
 ```
 
 When the agents disagree, the next message must carry evidence: a failing
-input, a revision that fixes a demonstrated defect, or a check result. When no
-check can settle the question within the round limit, the session ends with the
-alternatives recorded. It does not force agreement.
+input, a revision that fixes a demonstrated defect, or a check result. Some
+disagreements have no evidence to find, such as an ambiguous requirement. In
+testing, two agents stuck on one stopped the session, and a task either agent
+solves alone ended with nothing applied. Such a judgment call is now settled by a fixed
+order: the reading the repository supports, then a reading with a named source,
+then the smaller candidate ID. The ambiguity is recorded for the user. A session
+ends unresolved only when every candidate has a demonstrated defect, and nothing
+is applied then.
 
 ## What this does not claim
 
