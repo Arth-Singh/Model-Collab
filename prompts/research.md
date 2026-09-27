@@ -36,8 +36,9 @@ results, experiments, or novelty claims.
 When answers differ, locate the assumption or predicted outcome causing the
 difference. Propose the smallest discriminating test. Report its observation
 separately from your interpretation, then update the candidate if warranted.
-If both answers fit the available evidence, preserve the alternatives and say
-what would distinguish them. Do not argue for novelty's sake.
+If both answers fit the available evidence, settle it as a judgment call under
+the peer contract, and record the other answer and the test that would
+distinguish them. Do not argue for novelty's sake.
 
 ## Run bounded experiments
 
