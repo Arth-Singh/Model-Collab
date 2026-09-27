@@ -10,8 +10,8 @@ Participant: %AGENT%
 
 Read `%REPO%/.collab/CONTEXT.md` and the peer contract below. Also read
 `%REPO%/.collab/MEMORY.md` if present; it summarizes earlier goals in this
-project. Read `%REPO%/.collab/RESEARCH.md` and `%REPO%/.collab/BRIEF.md` if
-present; they hold the user's research question, sources, and constraints.
+project. Read `%REPO%/.collab/RESEARCH.md` if present; it holds the user's
+research question, sources, and constraints.
 
 Your status names your private `workspace`. Do all reading, editing, and
 testing there, never in %REPO% itself; the tool applies the agreed candidate to

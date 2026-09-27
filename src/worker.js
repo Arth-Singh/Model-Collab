@@ -76,7 +76,7 @@ function phaseGuide(session, maxRounds) {
 
 async function sharedContext(root) {
   const parts = await Promise.all(
-    ['CONTEXT.md', 'RESEARCH.md', 'BRIEF.md', 'MEMORY.md'].map(async (name) => {
+    ['CONTEXT.md', 'RESEARCH.md', 'MEMORY.md'].map(async (name) => {
       const text = await fs.readFile(path.join(root, '.collab', name), 'utf8').catch((e) => {
         if (e.code === 'ENOENT') return '';
         throw e;
@@ -117,7 +117,7 @@ You are ${agent}. This process makes exactly one contribution and exits; the wor
 - Your workspace is ${workspace}. It is your current directory. Edit files only there.
 - ${phaseGuide(state.session, state.config.maxRounds)}
 - The filtered session below is current as of this turn. Use collab_status only if you need a fresher view, and collab_verify to run configured checks.
-- Do not call collab_post, collab_start, collab_stop, collab_wait, or the model-collab CLI. Do not read or edit ${path.join(root, '.collab')} except CONTEXT.md, RESEARCH.md, BRIEF.md, MEMORY.md, history/ (earlier goals), and checkouts the tools create for you.
+- Do not call collab_post, collab_start, collab_stop, collab_wait, or the model-collab CLI. Do not read or edit ${path.join(root, '.collab')} except CONTEXT.md, RESEARCH.md, MEMORY.md, history/ (earlier goals), and checkouts the tools create for you.
 - Return the message as JSON matching the output schema, with null for unused optional strings. Omit clientMessageId, sessionId, and contextVersion; the worker binds them to this turn.
 - No background agents or recursive CLI calls. Stay within the user's scope and the repository's normal instructions.
 ${repair}
