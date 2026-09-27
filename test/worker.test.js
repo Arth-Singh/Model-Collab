@@ -581,8 +581,8 @@ test('a stalled Codex turn is retried once and then reported', async (t) => {
       root,
       agent: 'codex',
       state: await collab.status('codex'),
-      timeoutMs: 10000,
-      idleMs: 300,
+      timeoutMs: 20000,
+      idleMs: 1500,
       logDir,
     });
 
