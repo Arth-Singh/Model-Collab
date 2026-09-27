@@ -21,7 +21,7 @@
     "scripts/check.js"
   ],
   "scripts": {
-    "test": "node --test",
+    "test": "node --test \"test/*.test.js\"",
     "check": "node scripts/check.js",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

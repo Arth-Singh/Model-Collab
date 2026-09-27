@@ -1,0 +1,26 @@
+{
+  "rule": "Every candidate of the second screen (exercises Claude Haiku 4.5 failed while passing at least one hidden test) that the hard set does not use. Claude Sonnet 5 at medium effort passed all of them. Chosen after the hard-set runs and never used to change the protocol.",
+  "tasks": [
+    "go-matrix",
+    "go-paasio",
+    "go-react",
+    "go-scale-generator",
+    "go-transpose",
+    "go-tree-building",
+    "python-bowling",
+    "python-connect",
+    "python-react",
+    "python-rest-api",
+    "python-robot-name",
+    "python-simple-linked-list",
+    "python-transpose",
+    "python-two-bucket",
+    "python-wordy",
+    "rust-alphametics",
+    "rust-luhn-from",
+    "rust-nucleotide-codons",
+    "rust-ocr-numbers",
+    "rust-poker",
+    "rust-word-count"
+  ]
+}

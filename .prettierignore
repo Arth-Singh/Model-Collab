@@ -2,3 +2,10 @@ node_modules/
 .collab/
 *.tgz
 package-lock.json
+eval/polyglot/.cache/
+eval/polyglot/.cargo-target/
+eval/polyglot/tasks/
+eval/polyglot/runs/
+eval/polyglot/manifest.json
+eval/polyglot/preflight.json
+eval/polyglot/screen-selection.json
