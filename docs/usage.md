@@ -204,7 +204,9 @@ worktree. Codex uses `workspace-write` and ignores your Codex `config.toml` and
 execpolicy `.rules`, so a rule that lets `curl` or `git push` skip the sandbox in
 your own sessions does not apply to a worker. Claude Code runs shell commands in its OS
 sandbox, which limits writes to the worktree and temporary directories and blocks
-network access. Neither agent can search the web in worker mode. Both
+network access. A Claude Code worker has only its file tools and Bash, so allow
+rules in your Claude settings, such as one for `WebFetch`, do not apply. Neither
+agent can search or fetch from the web in worker mode. Both
 agents can edit files and run local tests; commands that need the network or
 paths outside the worktree will fail. Workers point Go's build cache at
 `.gocache` inside each worktree; other toolchains that write caches under your

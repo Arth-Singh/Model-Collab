@@ -530,6 +530,42 @@ fs.writeFileSync(args[args.indexOf('--output-last-message') + 1], ${JSON.stringi
   assert.ok(argv.includes('web_search="disabled"'));
 });
 
+test('an unattended Claude turn has no web tools, whatever the user settings allow', async (t) => {
+  const { root, collab } = await fixture(t);
+  const bin = await fs.mkdtemp(path.join(os.tmpdir(), 'model-collab-fake-claude-'));
+  t.after(() => fs.rm(bin, { recursive: true, force: true }));
+  const argvFile = path.join(bin, 'argv.json');
+  // A stand-in claude that records its arguments and answers with a proposal.
+  await fs.writeFile(
+    path.join(bin, 'claude'),
+    `#!${process.execPath}
+const fs = require('node:fs');
+fs.writeFileSync(${JSON.stringify(argvFile)}, JSON.stringify(process.argv.slice(2)));
+process.stdout.write(JSON.stringify({ is_error: false, structured_output: ${JSON.stringify(proposal())} }));
+`,
+    { mode: 0o755 },
+  );
+  const previous = process.env.PATH;
+  process.env.PATH = `${bin}${path.delimiter}${previous}`;
+  t.after(() => {
+    process.env.PATH = previous;
+  });
+  const logDir = path.join(root, '.collab', 'workers', 'claude');
+  await fs.mkdir(logDir, { recursive: true });
+  const message = await nativeTurn({
+    root,
+    agent: 'claude',
+    state: await collab.status('claude'),
+    timeoutMs: 10000,
+    logDir,
+  });
+  assert.equal(message.kind, 'proposal');
+  const argv = JSON.parse(await fs.readFile(argvFile, 'utf8'));
+  const tools = argv[argv.indexOf('--tools') + 1].split(',');
+  assert.deepEqual(tools.sort(), ['Bash', 'Edit', 'Glob', 'Grep', 'Read', 'Write']);
+  assert.ok(!argv.join(' ').includes('Web'));
+});
+
 test('Codex is busy only while a started item has not completed', () => {
   const event = (type, id) => JSON.stringify({ type, item: { id } });
   assert.equal(codexBusy(''), false);

@@ -21,6 +21,7 @@ const SESSION_POLL_MS = 1000;
 // no command running has lost its model stream; one was seen idle 25 minutes.
 const CODEX_IDLE_MS = 600_000;
 
+const WORKER_TOOLS = 'Read,Glob,Grep,Edit,Write,Bash';
 // Claude's shell runs in its OS sandbox: writes stay in its workspace and temp
 // directories and network access is denied, matching Codex workspace-write.
 const CLAUDE_WORKER_SETTINGS = JSON.stringify({
@@ -183,8 +184,12 @@ SHARED CONTEXT\n${context || '(none)'}\n\nFILTERED SESSION\n${JSON.stringify(sta
           'acceptEdits',
           '--permission-prompts',
           'none',
+          // Only these built-in tools exist in the turn. Allow rules in the user's
+          // settings, such as WebFetch for github.com, cannot bring back a web tool.
+          '--tools',
+          WORKER_TOOLS,
           '--allowedTools',
-          'Read,Glob,Grep,Edit,Write,Bash,mcp__model_collab__*',
+          `${WORKER_TOOLS},mcp__model_collab__*`,
           '--disable-slash-commands',
           '--no-session-persistence',
           '--no-chrome',

@@ -18,6 +18,9 @@ export function claudeArgs(model) {
     'acceptEdits',
     '--permission-prompts',
     'none',
+    // Only these built-in tools exist; allow rules in the user's settings cannot add WebFetch.
+    '--tools',
+    'Read,Glob,Grep,Edit,Write,Bash',
     '--allowedTools',
     'Read,Glob,Grep,Edit,Write,Bash',
     '--settings',
