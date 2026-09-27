@@ -74,6 +74,8 @@ A control window lets you pause, add a shared instruction, or stop.
 | Open the control window              | `Ctrl-b`, then `n` |
 | Detach and leave the session running | `Ctrl-b`, then `d` |
 
+These use tmux's default prefix, `Ctrl-b`; if you changed it, use yours.
+
 Return later with `model-collab attach`. To run without panes and print the
 conversation instead:
 

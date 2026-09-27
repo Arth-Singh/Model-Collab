@@ -14,9 +14,18 @@ native CLI before starting a session.
 
 ## The command is not found
 
-Run `npm link` from the Model Collab checkout. If your shell still cannot find
-the command, run `npm prefix -g` and check that its `bin` directory is on your
-PATH. You can also invoke the checkout directly:
+Run `npm link` from the Model Collab checkout. If it fails with `EACCES`, your
+global npm directory belongs to root. Instead of using `sudo`, point npm at a
+directory you own and add it to your PATH:
+
+```sh
+npm config set prefix ~/.npm-global
+export PATH="$HOME/.npm-global/bin:$PATH"
+npm link
+```
+
+If your shell still cannot find the command, run `npm prefix -g` and check that
+its `bin` directory is on your PATH. You can also invoke the checkout directly:
 
 ```sh
 node /path/to/Model-Collab/bin/model-collab.js doctor
