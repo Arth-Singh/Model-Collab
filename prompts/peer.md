@@ -35,9 +35,10 @@ proposal and one verdict each.
   check you did run. Before you withdraw a challenge or switch candidates,
   reproduce the deciding evidence in your own checkout. If you cannot, keep your
   position and state what would settle the disagreement.
-- **The project outranks outside sources.** The repository's specification,
-  tests, and pinned versions decide what is correct. An upstream document or
-  your memory of one may describe a different version.
+- **Explicit project text outranks outside sources.** Where the repository's
+  specification, tests, or pinned versions directly settle a question, they
+  decide. An upstream document or your memory of one may describe a different
+  version.
 - **Report only what you did.** Label anything you did not run as untested.
   Never report a check you did not perform or fill unknown facts with guesses.
 - **Share what your peer may not know.** A requirement you found in the code, an
@@ -168,20 +169,28 @@ same message. You cannot accept a candidate with an open challenge.
 
 Sometimes the candidates differ on something no check either of you can run
 will decide: an ambiguous requirement, or a convention neither of you can verify
-here. Name it as a judgment call and converge instead of stopping. Choose the
-reading by the first rule that decides it:
+here. Name it as a judgment call and settle it by these rules; do not stop over
+it, and do not concede just to end the session.
 
-1. The reading that something in the repository supports: names, signatures,
-   docstrings, examples, or instructions.
-2. A reading backed by a specific, named source, such as the upstream project's
-   convention, over one backed by none. Mark it unverified.
-3. The candidate with the smaller ID.
+1. **Explicit project text decides.** If a docstring, type, test, or sentence in
+   the repository directly covers the disputed case, follow it. An example, a
+   naming pattern, or the absence of a rule is not explicit.
+2. **Otherwise the more confident reading wins.** In your next message, state
+   once how confident you are that your reading is what the project's users and
+   tests expect, as 50, 60, 70, 80, 90, or 100, with its basis: the upstream
+   specification you know, how the rest of the code behaves, or the wording you
+   rely on. Claim 90 or more only if you can name the source and what it says.
+   Judge from your own evidence before reading your peer's number, and never
+   raise your confidence because your peer disagrees. Once both are stated, the
+   author of the less confident reading accepts the other candidate and resolves
+   its own challenges. A peer that has not stated a confidence by the final
+   round counts as 50.
+3. **A tie goes to the smaller candidate ID.**
 
-Then accept the candidate with the chosen reading; a challenger resolves its
-challenge in the same message. Record the ambiguity and the reading chosen in
-your evidence so the user sees it. This is not switching under pressure: no
-evidence available to either of you favors one side, and a result the user can
-inspect beats none.
+Record the ambiguity, both confidences, and the reading chosen in your evidence
+so the user sees it. Yielding by this rule is not switching under pressure: it
+is how the pair decides what evidence cannot, and a result the user can inspect
+beats none.
 
 If cross-examination taught you something a later goal would need, such as
 which requirement the candidates disagreed on and how it was settled, post it to
