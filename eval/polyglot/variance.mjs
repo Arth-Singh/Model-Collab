@@ -53,8 +53,9 @@ for (const condition of conditions) {
       testFraction: mean(rows.map((r) => (r.testsTotal ? r.testsPassed / r.testsTotal : 0))),
       cost: rows.reduce((a, r) => a + cost(r), 0),
       minutes: mean(rows.map((r) => r.wallMs / 60000)),
-      infra: rows.filter((r) => r.timedOut || Object.values(r.usage ?? {}).some((u) => u?.isError))
-        .length,
+      infra: rows.filter(
+        (r) => r.stalled || r.timedOut || Object.values(r.usage ?? {}).some((u) => u?.isError),
+      ).length,
     };
   });
   const perTask = counted.map((task) => {
@@ -96,9 +97,62 @@ for (const [condition, s] of Object.entries(summary)) {
     `  cost/time      $${s.costPerTrial.toFixed(2)} per trial, ${s.minutesPerTask.toFixed(1)} min per task`,
   );
   if (s.infraFailures)
-    console.log(`  infra failures ${s.infraFailures} (timeouts or client errors)`);
+    console.log(`  infra failures ${s.infraFailures} (stalls, timeouts, or client errors)`);
   console.log();
 }
+
+// Exact two-sided McNemar test on discordant (task, trial) pairs pooled over trials.
+function mcnemar(b, c) {
+  const n = b + c;
+  if (!n) return 1;
+  let tail = 0,
+    term = 1;
+  for (let i = 0; i <= Math.min(b, c); i++) {
+    tail += term;
+    term = (term * (n - i)) / (i + 1);
+  }
+  return Math.min(1, (2 * tail) / 2 ** n);
+}
+const paired = [];
+for (let i = 0; i < conditions.length; i++)
+  for (let j = i + 1; j < conditions.length; j++) {
+    const [a, b] = [conditions[i], conditions[j]];
+    let aOnly = 0,
+      bOnly = 0,
+      pairs = 0;
+    for (const trial of trials)
+      for (const task of tasks) {
+        const ra = get(trial, task, a),
+          rb = get(trial, task, b);
+        if (!ra || !rb) continue;
+        pairs++;
+        if (ra.passed && !rb.passed) aOnly++;
+        if (rb.passed && !ra.passed) bOnly++;
+      }
+    paired.push({ a, b, pairs, aOnly, bOnly, mcnemarP: mcnemar(aOnly, bOnly) });
+  }
+console.log('Paired over all trials');
+for (const x of paired)
+  console.log(
+    `  ${x.a} vs ${x.b}: ${x.pairs} pairs, only ${x.a} passed ${x.aOnly}, only ${x.b} passed ${x.bOnly}, McNemar p = ${x.mcnemarP.toFixed(4)}`,
+  );
+// Best of the two solo answers in the same trial: what a perfect chooser could reach.
+let bestOfSolo = null;
+if (conditions.includes('solo-codex') && conditions.includes('solo-claude')) {
+  const rates = trials.map((trial) => {
+    const both = tasks.filter(
+      (task) => get(trial, task, 'solo-codex') && get(trial, task, 'solo-claude'),
+    );
+    return (
+      both.filter(
+        (task) => get(trial, task, 'solo-codex').passed || get(trial, task, 'solo-claude').passed,
+      ).length / both.length
+    );
+  });
+  bestOfSolo = { mean: mean(rates), sd: sd(rates), perTrial: rates };
+  console.log(`  best of both solo answers: ${pct(bestOfSolo.mean)} ± ${pct(bestOfSolo.sd)} SD`);
+}
+console.log();
 
 console.log('Per-task passes out of', trials.length);
 const width = Math.max(...tasks.map((t) => t.length));
@@ -119,5 +173,5 @@ await fs.writeFile(
     'runs',
     `variance-${conditions.join('+')}.json`,
   ),
-  JSON.stringify({ dirs, summary }, null, 2) + '\n',
+  JSON.stringify({ dirs, summary, paired, bestOfSolo }, null, 2) + '\n',
 );
