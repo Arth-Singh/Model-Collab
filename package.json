@@ -18,7 +18,9 @@
     "README.md",
     "LICENSE",
     "CONTRIBUTING.md",
-    "scripts/check.js"
+    "scripts/check.js",
+    "CHANGELOG.md",
+    "SECURITY.md"
   ],
   "scripts": {
     "test": "node --test \"test/*.test.js\"",
