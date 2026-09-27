@@ -74,9 +74,13 @@ If the entire tmux session closed, run `up` again with the current goal to recre
 the terminal. If the protocol already reached a limit, start a new goal instead.
 
 In worker mode, `codex turn failed: stalled` means Codex printed nothing for 10
-minutes twice in a row with no command running. This is a service or network
-problem, not a protocol result. Check that `codex exec "Reply with pong"`
-answers, then run `up` again with the same goal.
+minutes twice in a row with no command running. Its connection to the model
+service was lost, most often because the computer slept or the network dropped.
+A `timeout` from either agent after the computer slept has the same cause. It
+is not a protocol result. Keep the computer awake during unattended sessions:
+on macOS, run `caffeinate -i model-collab up ...` and keep the lid open. Check
+that `codex exec "Reply with pong"` answers, then run `up` again with the same
+goal.
 
 ## A different goal is already active
 

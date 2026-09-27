@@ -54,7 +54,11 @@ for (const condition of conditions) {
       cost: rows.reduce((a, r) => a + cost(r), 0),
       minutes: mean(rows.map((r) => r.wallMs / 60000)),
       infra: rows.filter(
-        (r) => r.stalled || r.timedOut || Object.values(r.usage ?? {}).some((u) => u?.isError),
+        (r) =>
+          r.stalled ||
+          r.slept ||
+          r.timedOut ||
+          Object.values(r.usage ?? {}).some((u) => u?.isError),
       ).length,
     };
   });
@@ -97,7 +101,7 @@ for (const [condition, s] of Object.entries(summary)) {
     `  cost/time      $${s.costPerTrial.toFixed(2)} per trial, ${s.minutesPerTask.toFixed(1)} min per task`,
   );
   if (s.infraFailures)
-    console.log(`  infra failures ${s.infraFailures} (stalls, timeouts, or client errors)`);
+    console.log(`  infra failures ${s.infraFailures} (stalls, sleep, timeouts, or client errors)`);
   console.log();
 }
 

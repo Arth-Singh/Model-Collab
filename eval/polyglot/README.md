@@ -46,13 +46,15 @@ Run every command from this directory.
 
    Without `COLLAB_DIR`, the harness runs this repository as it is.
 
-4. Run the conditions, one trial per output directory:
+4. Run the conditions, one trial per output directory. Keep the computer
+   awake for the whole run: a sleeping machine drops the agents' model
+   connections. On macOS, keep the lid open and use `caffeinate`:
 
    ```sh
-   node run-conditions.mjs --set hard --trial 1 --out runs/hard-t1
-   node run-conditions.mjs --set hard --trial 2 --out runs/hard-t2
-   node run-conditions.mjs --set hard --trial 3 --out runs/hard-t3
-   node run-conditions.mjs --set heldout --trial 1 --out runs/heldout-t1
+   caffeinate -i node run-conditions.mjs --set hard --trial 1 --out runs/hard-t1
+   caffeinate -i node run-conditions.mjs --set hard --trial 2 --out runs/hard-t2
+   caffeinate -i node run-conditions.mjs --set hard --trial 3 --out runs/hard-t3
+   caffeinate -i node run-conditions.mjs --set heldout --trial 1 --out runs/heldout-t1
    ```
 
    Each result is appended to `results.jsonl` as it finishes. Rerunning the same
@@ -91,11 +93,14 @@ Run every command from this directory.
   condition.
 - The pair runs `model-collab up --ui workers` with a 25-minute session and a
   15-minute turn limit, with project memory off.
-- A Codex run that prints nothing for 10 minutes while no command is running
-  has lost its model stream. The pair's worker retries that turn once itself.
-  If a run still stalls, the harness discards it and runs the job once more
-  from a fresh workspace; `stallRetries` records it. A job that stalls
-  twice is recorded with `stalled: true` and counts as a failure.
+- Two kinds of job are infrastructure failures, not results: a Codex run that
+  prints nothing for 10 minutes while no command is running, which has lost its
+  model stream, and on macOS a job the computer slept through, found in the
+  `pmset` power log. The pair's worker first retries a stalled turn itself. The
+  harness then discards such an attempt and runs the job once more from a
+  fresh workspace; `infraRetries` records it. A job whose second attempt fails
+  the same way is recorded with `stalled` or `slept` set and counts as a
+  failure.
 - Grading copies the final workspace without build caches, deletes any test
   files the agent wrote, and restores the exercise's support files and hidden
   tests before running them.

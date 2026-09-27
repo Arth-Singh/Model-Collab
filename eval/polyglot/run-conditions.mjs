@@ -24,9 +24,10 @@ const COLLAB_TIMEOUT_MS = (COLLAB_MINUTES + 5) * 60_000;
 // Matches the Model Collab worker: a Codex run that prints nothing for this long
 // with no command in progress has lost its model stream.
 const CODEX_IDLE_MS = 10 * 60_000;
-// A job whose model stream stalled is an infrastructure failure, not a result;
-// it is run again from a fresh workspace this many times before it is recorded.
-const STALL_RETRIES = 1;
+// A job whose model stream stalled, or that the computer slept through, is an
+// infrastructure failure, not a result. It is run again from a fresh workspace
+// this many times before it is recorded.
+const INFRA_RETRIES = 1;
 const CONDITIONS = ['solo-codex', 'solo-claude', 'collab-new'];
 
 const { values: opts } = parseArgs({
@@ -79,6 +80,26 @@ function codexBusy(log) {
     else if (event.type === 'item.completed') open.delete(event.item?.id);
   }
   return open.size > 0;
+}
+
+/**
+ * True when macOS logged a system sleep between the two times. A sleeping
+ * machine drops the agents' model connections, so the job's result says
+ * nothing about the condition. Dark wake, where a closed laptop keeps running,
+ * does not count. Other platforms are assumed to stay awake.
+ */
+function sleptBetween(startMs, endMs) {
+  if (process.platform !== 'darwin') return false;
+  const log = execFileSync('pmset', ['-g', 'log'], {
+    encoding: 'utf8',
+    maxBuffer: 256 * 1024 * 1024,
+  });
+  return log.split('\n').some((line) => {
+    const m = /^(\S+) (\S+) ([+-]\d\d)(\d\d) Sleep\s+Entering Sleep state/.exec(line);
+    if (!m) return false;
+    const at = Date.parse(`${m[1]}T${m[2]}${m[3]}:${m[4]}`);
+    return at >= startMs && at <= endMs;
+  });
 }
 
 function run(command, args, { cwd, input = '', timeoutMs, idleMs, env, logFile }) {
@@ -359,19 +380,15 @@ async function attempt(job, task, taskDir) {
   await fs.mkdir(dir, { recursive: true });
   await fs.cp(path.join(taskDir, 'workspace'), ws, { recursive: true });
   await fs.appendFile(path.join(ws, '.git', 'info', 'exclude'), '\n.collab/\n');
-  const startedAt = new Date().toISOString();
+  const started = Date.now();
+  let outcome;
   try {
-    return { startedAt, dir, ws, ...(await runCondition(job.condition, task, ws, dir)) };
+    outcome = await runCondition(job.condition, task, ws, dir);
   } catch (error) {
-    return {
-      startedAt,
-      dir,
-      ws,
-      run: { code: null, error: error.message, wallMs: 0 },
-      stalled: false,
-      usage: {},
-    };
+    outcome = { run: { code: null, error: error.message, wallMs: 0 }, stalled: false, usage: {} };
   }
+  const startedAt = new Date(started).toISOString();
+  return { startedAt, dir, ws, ...outcome, slept: sleptBetween(started, Date.now()) };
 }
 
 let next = 0,
@@ -382,12 +399,13 @@ async function workerLoop() {
     const taskDir = path.join(HERE, 'tasks', job.task);
     const task = JSON.parse(await fs.readFile(path.join(taskDir, 'task.json'), 'utf8'));
     let outcome,
-      stalls = 0;
+      retries = 0;
     for (;;) {
       outcome = await attempt(job, task, taskDir);
-      if (!outcome.stalled || stalls >= STALL_RETRIES) break;
-      stalls++;
-      console.log(`${job.task} ${job.condition} stalled; running it again`);
+      const infra = outcome.slept ? 'the computer slept' : outcome.stalled ? 'stalled' : null;
+      if (!infra || retries >= INFRA_RETRIES) break;
+      retries++;
+      console.log(`${job.task} ${job.condition}: ${infra}; running it again`);
     }
     const graded = await grade(taskDir, outcome.ws);
     const record = {
@@ -399,10 +417,11 @@ async function workerLoop() {
       wallMs: outcome.run.wallMs,
       exitCode: outcome.run.code,
       timedOut: outcome.run.timedOut ?? false,
-      // Stalled runs replaced by a fresh attempt; `stalled` marks a final attempt
-      // that stalled too, which is an infrastructure failure.
-      stallRetries: stalls,
+      // Attempts discarded as infrastructure failures. `stalled` or `slept` on
+      // the final attempt marks the record itself as one.
+      infraRetries: retries,
       stalled: outcome.stalled,
+      slept: outcome.slept,
       passed: graded.passed,
       testsPassed: graded.testsPassed,
       testsTotal: graded.testsTotal,
@@ -414,7 +433,7 @@ async function workerLoop() {
     await fs.appendFile(resultsFile, JSON.stringify(record) + '\n');
     finished++;
     console.log(
-      `[${finished}/${jobs.length}] ${job.task} ${job.condition} passed=${graded.passed} ${graded.testsPassed}/${graded.testsTotal} ${Math.round(outcome.run.wallMs / 1000)}s${outcome.stalled ? ' STALLED' : ''}`,
+      `[${finished}/${jobs.length}] ${job.task} ${job.condition} passed=${graded.passed} ${graded.testsPassed}/${graded.testsTotal} ${Math.round(outcome.run.wallMs / 1000)}s${outcome.stalled ? ' STALLED' : ''}${outcome.slept ? ' SLEPT' : ''}`,
     );
   }
 }
