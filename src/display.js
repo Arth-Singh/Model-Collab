@@ -46,7 +46,7 @@ export function renderStatus(state) {
   if (session.winner || session.status === 'converged') lines.push(renderApplied(session));
   if (state.board?.posts)
     lines.push(
-      `Board: ${state.board.posts} posts in ${state.board.channels.map((c) => c.name).join(', ')}`,
+      `Board: ${state.board.posts} post${state.board.posts === 1 ? '' : 's'} in ${state.board.channels.map((c) => c.name).join(', ')}`,
     );
   const recent = session.messages.slice(-4);
   if (recent.length)

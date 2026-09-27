@@ -42,5 +42,20 @@
   },
   "devDependencies": {
     "prettier": "3.9.8"
-  }
+  },
+  "homepage": "https://github.com/Arth-Singh/Model-Collab#readme",
+  "bugs": {
+    "url": "https://github.com/Arth-Singh/Model-Collab/issues"
+  },
+  "keywords": [
+    "codex",
+    "claude-code",
+    "multi-agent",
+    "mcp",
+    "code-review",
+    "llm",
+    "agents",
+    "pair-programming"
+  ],
+  "author": "Arth Singh"
 }

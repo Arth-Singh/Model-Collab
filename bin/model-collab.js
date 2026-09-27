@@ -56,7 +56,9 @@ async function jsonInput(value) {
 withRepo(
   program
     .command('up')
-    .description('Initialize any project and automatically start both native agents in tmux panes.')
+    .description(
+      'Start a goal and launch both agents in tmux panes, or unattended with --ui workers.',
+    )
     .argument('<goal>'),
 )
   .option('--preset <name>', 'coding (new projects) or research')
@@ -238,21 +240,30 @@ withRepo(
     );
   });
 
-withRepo(program.command('start').argument('<goal>'))
+withRepo(
+  program
+    .command('start')
+    .argument('<goal>')
+    .description('Start a goal without launching agents; each peer joins with launch or worker.'),
+)
   .option('--criteria <text...>', 'Success criteria')
   .option('--json', 'Print session state as JSON')
   .action(async (goal, opts) => {
     const state = await core(opts).start({ topic: goal, successCriteria: opts.criteria ?? [] });
     output(opts.json ? state : renderStatus(state));
   });
-withRepo(program.command('status'))
+withRepo(
+  program
+    .command('status')
+    .description('Print the session state as JSON, or a summary with --human.'),
+)
   .option('--agent <id>', 'Peer-filtered view')
   .option('--human', 'Show a readable session summary')
   .action(async (opts) => {
     const state = await core(opts).status(opts.agent);
     output(opts.human ? renderStatus(state) : state);
   });
-withRepo(program.command('post'))
+withRepo(program.command('post').description("Send a peer's protocol message."))
   .requiredOption('--agent <id>')
   .requiredOption(
     '--session <id>',
@@ -263,7 +274,11 @@ withRepo(program.command('post'))
     const sessionId = sessionIdSchema.parse(opts.session);
     output(await core(opts).post(opts.agent, await jsonInput(opts.json), { sessionId }));
   });
-withRepo(program.command('wait'))
+withRepo(
+  program
+    .command('wait')
+    .description('Wait up to 25 seconds for the session to move past a revision.'),
+)
   .requiredOption('--agent <id>')
   .requiredOption('--after <revision>', 'Last observed revision', Number)
   .option('--timeout <ms>', 'Maximum 25000 ms', Number, 25000)
@@ -299,12 +314,16 @@ withRepo(
         : `Applied ${applied.candidate}: ${applied.files.join(', ') || 'no file changes'}.`,
     );
   });
-withRepo(program.command('verify'))
+withRepo(
+  program
+    .command('verify')
+    .description('Run a configured check against a candidate in a clean checkout.'),
+)
   .requiredOption('--agent <id>')
   .requiredOption('--candidate <id>')
   .requiredOption('--check <name>')
   .action(async (opts) => output(await core(opts).verify(opts.agent, opts.candidate, opts.check)));
-withRepo(program.command('stop'))
+withRepo(program.command('stop').description('Stop the current session without applying anything.'))
   .option('--reason <text>', 'Stop reason', 'Stopped by user')
   .option('--json', 'Print session state as JSON')
   .action(async (opts) => {
@@ -492,7 +511,7 @@ withRepo(
   output('Project memory cleared.');
 });
 
-withRepo(program.command('export'))
+withRepo(program.command('export').description('Print the conversation as JSONL or Markdown.'))
   .option('--format <type>', 'jsonl or markdown', 'jsonl')
   .action(async (opts) => {
     if (!['jsonl', 'markdown'].includes(opts.format))
@@ -503,7 +522,10 @@ withRepo(
   program.command('serve').description('Run stdio MCP server with a fixed participant identity.'),
 )
   .requiredOption('--agent <id>')
-  .option('--worker-tools', 'Expose only status, review, and verification tools')
+  .option(
+    '--worker-tools',
+    'Expose only status, review, verification, and board tools, without posting or lifecycle tools',
+  )
   .option('--no-contract', 'Omit the peer contract from server instructions')
   .action(async (opts) => {
     const { serve } = await import('../src/server.js');

@@ -19,9 +19,10 @@ model-collab up "Find why the cache returns expired entries and fix it"
   so the shortest run is one proposal each and one verdict.
 - **Findings carry over.** A shared board keeps reproductions, dead ends, and
   decisions across goals, and after each goal a project memory condenses what
-  was learned. Both follow designs OpenAI is building into Codex. Agents read
-  them before they start and verify before they trust them.
-- **Your tree stays yours. The agreed change is applied only when the agents
+  was learned. Both are modeled on Codex's message board and memories (see
+  [Design](docs/design.md)). Agents read them before they start and verify
+  before they trust them.
+- **Your tree stays yours.** The agreed change is applied only when the agents
   converge, and never over files you edited in the meantime.
 
 ```text
@@ -108,9 +109,9 @@ model-collab board post --channel decisions "Never change the public parse() sig
 model-collab board search parse
 ```
 
-Give both agents
-background by editing `.collab/CONTEXT.md` after `model-collab init`. They also
-follow your repository's `AGENTS.md` or `CLAUDE.md`.
+Give both agents background by editing `.collab/CONTEXT.md` after
+`model-collab init`. They also follow your repository's `AGENTS.md` or
+`CLAUDE.md`.
 
 For research questions, `model-collab init --preset research` adds a brief for
 your question, sources, assumptions, and experiment budget.
