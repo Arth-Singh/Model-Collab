@@ -171,11 +171,9 @@ for (const task of tasks)
       .join('')}`,
   );
 
+const runsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'runs');
+await fs.mkdir(runsDir, { recursive: true });
 await fs.writeFile(
-  path.join(
-    path.dirname(fileURLToPath(import.meta.url)),
-    'runs',
-    `variance-${conditions.join('+')}.json`,
-  ),
+  path.join(runsDir, `variance-${conditions.join('+')}.json`),
   JSON.stringify({ dirs, summary, paired, bestOfSolo }, null, 2) + '\n',
 );
