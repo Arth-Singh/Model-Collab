@@ -194,8 +194,10 @@ worker processes.
 Each model turn may take up to 15 minutes by default; change this with
 `--turn-timeout SECONDS`. If the protocol rejects a message, for example an
 acceptance while a challenge is still open, the worker asks that agent for one
-corrected message before giving up. A note you add during a turn discards that
-turn's output and the agent starts again with your note.
+corrected message before giving up. If a Codex turn prints nothing for 10
+minutes while no command is running, its model stream has stalled; the worker
+stops it and retries the turn once, keeping its edits. A note you add during a
+turn discards that turn's output and the agent starts again with your note.
 
 Workers run noninteractively inside each client's sandbox, in the agent's
 worktree. Codex uses `workspace-write` and ignores your Codex `config.toml` and

@@ -17,6 +17,9 @@ const MAX_TURN_TIMEOUT_MS = 3600000;
 // would otherwise end the whole session and discard every earlier turn.
 const MAX_REPAIRS_PER_TURN = 1;
 const SESSION_POLL_MS = 1000;
+// Codex prints an event for every step it takes. A turn silent this long with
+// no command running has lost its model stream; one was seen idle 25 minutes.
+const CODEX_IDLE_MS = 600_000;
 
 // Claude's shell runs in its OS sandbox: writes stay in its workspace and temp
 // directories and network access is denied, matching Codex workspace-write.
@@ -46,6 +49,22 @@ function cleanMessage(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new Error('Worker response must be a JSON message.');
   return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== null));
+}
+
+/** True while Codex runs a command or tool call it started and has not finished. */
+export function codexBusy(log) {
+  const open = new Set();
+  for (const line of log.split('\n')) {
+    let event;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (event.type === 'item.started') open.add(event.item?.id);
+    else if (event.type === 'item.completed') open.delete(event.item?.id);
+  }
+  return open.size > 0;
 }
 
 function phaseGuide(session, maxRounds) {
@@ -78,6 +97,7 @@ export async function nativeTurn({
   logDir,
   signal,
   rejection,
+  idleMs = CODEX_IDLE_MS,
 }) {
   const id = randomUUID();
   const workspace = state.session.workspace;
@@ -171,30 +191,44 @@ SHARED CONTEXT\n${context || '(none)'}\n\nFILTERED SESSION\n${JSON.stringify(sta
           '--settings',
           CLAUDE_WORKER_SETTINGS,
         ];
-  const result = await runProcess(agent, args, {
-    cwd: workspace,
-    // Sandboxed agents cannot write Go's default cache under the home directory.
-    // Snapshots never capture .gocache.
-    env: { ...process.env, GOCACHE: path.join(workspace, '.gocache') },
-    input: prompt,
-    timeoutMs,
-    deadlineMs: Date.parse(state.session.deadlineAt),
-    // Codex returns its message through --output-last-message; its --json event
-    // stream is only a log and grows with every command it runs, so keep a tail.
-    // Claude's stdout is the result itself.
-    ...(agent === 'codex'
-      ? { tailBytes: 1_000_000, maxOutputBytes: 256_000_000 }
-      : { maxOutputBytes: 1_000_000 }),
-    signal,
-  });
-  await fs.writeFile(
-    path.join(logDir, `${id}.log.json`),
-    JSON.stringify(
-      { agent, model: model ?? DEFAULT_MODELS[agent], round: state.session.round, ...result },
-      null,
-      2,
-    ),
-  );
+  const attempt = async (input, suffix) => {
+    const result = await runProcess(agent, args, {
+      cwd: workspace,
+      // Sandboxed agents cannot write Go's default cache under the home directory.
+      // Snapshots never capture .gocache.
+      env: { ...process.env, GOCACHE: path.join(workspace, '.gocache') },
+      input,
+      timeoutMs,
+      deadlineMs: Date.parse(state.session.deadlineAt),
+      // Codex returns its message through --output-last-message; its --json event
+      // stream is only a log and grows with every command it runs, so keep a tail.
+      // Claude's stdout is the result itself.
+      ...(agent === 'codex'
+        ? {
+            tailBytes: 1_000_000,
+            maxOutputBytes: 256_000_000,
+            idleMs,
+            busy: codexBusy,
+          }
+        : { maxOutputBytes: 1_000_000 }),
+      signal,
+    });
+    await fs.writeFile(
+      path.join(logDir, `${id}${suffix}.log.json`),
+      JSON.stringify(
+        { agent, model: model ?? DEFAULT_MODELS[agent], round: state.session.round, ...result },
+        null,
+        2,
+      ),
+    );
+    return result;
+  };
+  let result = await attempt(prompt, '');
+  if (result.error === 'stalled')
+    result = await attempt(
+      `${prompt}\nYOUR PREVIOUS ATTEMPT AT THIS TURN STOPPED RESPONDING\nIts edits remain in your workspace. Check them before relying on them, then finish the turn.\n`,
+      '-retry',
+    );
   if (result.error || result.code !== 0)
     throw new Error(
       `${agent} turn failed: ${result.error ?? `exit ${result.code}`}; see ${logDir}`,
@@ -284,8 +318,9 @@ export async function runWorker({
       }
       onEvent({ event: 'thinking', agent, round: s.round });
       // One model invocation per scheduled turn, plus at most one corrective call
-      // when the protocol rejects the message. Transport failures are surfaced,
-      // not retried into an unbounded token-spending loop.
+      // when the protocol rejects the message. The transport retries a stalled
+      // Codex stream once; other failures are surfaced, not retried into an
+      // unbounded token-spending loop.
       let rejection = null;
       for (let repairs = 0; ; repairs++) {
         calls++;

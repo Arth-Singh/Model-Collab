@@ -10,7 +10,9 @@ export const DEFAULT_EFFORT = 'high';
  * Run without a shell. Bound output and terminate the whole POSIX process group.
  * With `tailBytes`, keep only the last `tailBytes` of each stream and stop the
  * process only when total output exceeds `maxOutputBytes`; use it when the
- * result arrives another way and the stream is only a log.
+ * result arrives another way and the stream is only a log. With `idleMs`, stop
+ * with `stalled` when neither stream has written for that long, unless `busy()`
+ * reports work in progress.
  */
 export function runProcess(command, args = [], options = {}) {
   const {
@@ -20,6 +22,8 @@ export function runProcess(command, args = [], options = {}) {
     deadlineMs = Date.now() + timeoutMs,
     maxOutputBytes = 1_000_000,
     tailBytes = null,
+    idleMs = null,
+    busy = () => false,
     env = process.env,
     signal,
     onLaunch,
@@ -47,6 +51,7 @@ export function runProcess(command, args = [], options = {}) {
       failure = null,
       settled = false,
       killTimer,
+      idleTimer,
       launched = false;
     const child = spawn(command, args, {
       cwd,
@@ -76,12 +81,19 @@ export function runProcess(command, args = [], options = {}) {
       killTimer.unref();
     };
     const timer = setTimeout(() => stop('timeout'), remaining);
+    const watchIdle = () => {
+      if (!idleMs) return;
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => (busy(stdout) ? watchIdle() : stop('stalled')), idleMs);
+    };
+    watchIdle();
     const abort = () => stop('aborted');
     signal?.addEventListener('abort', abort, { once: true });
     const finish = (code, exitSignal) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      clearTimeout(idleTimer);
       clearTimeout(killTimer);
       signal?.removeEventListener('abort', abort);
       // A child may exit while a spawned descendant remains alive.
@@ -99,6 +111,7 @@ export function runProcess(command, args = [], options = {}) {
     };
     const collect = (name) => (chunk) => {
       bytes += chunk.length;
+      watchIdle();
       if (tailBytes) {
         let text = (name === 'stdout' ? stdout : stderr) + chunk.toString('utf8');
         if (text.length > tailBytes) {

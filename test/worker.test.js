@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { Collaboration } from '../src/core.js';
-import { nativeTurn, runWorker } from '../src/worker.js';
+import { codexBusy, nativeTurn, runWorker } from '../src/worker.js';
 import { runProcess } from '../src/native.js';
 import { gitProject } from './helpers.js';
 
@@ -528,4 +528,72 @@ fs.writeFileSync(args[args.indexOf('--output-last-message') + 1], ${JSON.stringi
     assert.ok(argv.includes(flag), `missing ${flag}`);
   assert.equal(argv[argv.indexOf('--sandbox') + 1], 'workspace-write');
   assert.ok(argv.includes('web_search="disabled"'));
+});
+
+test('Codex is busy only while a started item has not completed', () => {
+  const event = (type, id) => JSON.stringify({ type, item: { id } });
+  assert.equal(codexBusy(''), false);
+  assert.equal(codexBusy(`${JSON.stringify({ type: 'turn.started' })}\n`), false);
+  assert.equal(
+    codexBusy([event('item.started', 'a'), event('item.started', 'b')].join('\n')),
+    true,
+  );
+  assert.equal(
+    codexBusy([event('item.started', 'a'), event('item.completed', 'a'), '{"partial'].join('\n')),
+    false,
+  );
+});
+
+async function stallingCodex(t, stalls) {
+  const bin = await fs.mkdtemp(path.join(os.tmpdir(), 'model-collab-stalling-codex-'));
+  t.after(() => fs.rm(bin, { recursive: true, force: true }));
+  const countFile = path.join(bin, 'count');
+  const inputFile = path.join(bin, 'input');
+  // A stand-in codex whose first `stalls` runs start a turn and then go silent.
+  await fs.writeFile(
+    path.join(bin, 'codex'),
+    `#!${process.execPath}
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+const count = Number(fs.existsSync(${JSON.stringify(countFile)}) ? fs.readFileSync(${JSON.stringify(countFile)}, 'utf8') : 0) + 1;
+fs.writeFileSync(${JSON.stringify(countFile)}, String(count));
+fs.writeFileSync(${JSON.stringify(inputFile)}, fs.readFileSync(0, 'utf8'));
+process.stdout.write('{"type":"turn.started"}\\n');
+if (count <= ${stalls}) setInterval(() => {}, 1000);
+else fs.writeFileSync(args[args.indexOf('--output-last-message') + 1], ${JSON.stringify(JSON.stringify(proposal()))});
+`,
+    { mode: 0o755 },
+  );
+  const previous = process.env.PATH;
+  process.env.PATH = `${bin}${path.delimiter}${previous}`;
+  t.after(() => {
+    process.env.PATH = previous;
+  });
+  return { countFile, inputFile };
+}
+
+test('a stalled Codex turn is retried once and then reported', async (t) => {
+  const { root, collab } = await fixture(t);
+  const logDir = path.join(root, '.collab', 'workers', 'codex');
+  await fs.mkdir(logDir, { recursive: true });
+  const turn = async () =>
+    nativeTurn({
+      root,
+      agent: 'codex',
+      state: await collab.status('codex'),
+      timeoutMs: 10000,
+      idleMs: 300,
+      logDir,
+    });
+
+  const once = await stallingCodex(t, 1);
+  assert.equal((await turn()).kind, 'proposal');
+  assert.equal(await fs.readFile(once.countFile, 'utf8'), '2');
+  assert.match(await fs.readFile(once.inputFile, 'utf8'), /PREVIOUS ATTEMPT AT THIS TURN STOPPED/);
+  const logs = (await fs.readdir(logDir)).filter((name) => name.endsWith('.log.json'));
+  assert.equal(logs.filter((name) => name.endsWith('-retry.log.json')).length, 1);
+
+  const twice = await stallingCodex(t, 2);
+  await assert.rejects(turn(), /codex turn failed: stalled/);
+  assert.equal(await fs.readFile(twice.countFile, 'utf8'), '2');
 });

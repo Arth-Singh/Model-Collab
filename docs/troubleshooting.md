@@ -64,6 +64,11 @@ goal. Avoid starting a second instance while the original agent is still working
 If the entire tmux session closed, run `up` again with the current goal to recreate
 the terminal. If the protocol already reached a limit, start a new goal instead.
 
+In worker mode, `codex turn failed: stalled` means Codex printed nothing for 10
+minutes twice in a row with no command running. This is a service or network
+problem, not a protocol result. Check that `codex exec "Reply with pong"`
+answers, then run `up` again with the same goal.
+
 ## A different goal is already active
 
 Finish or stop the existing goal before starting another:
