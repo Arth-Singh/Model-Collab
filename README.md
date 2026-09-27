@@ -39,7 +39,11 @@ explains each rule and its source.
 ## Install
 
 You need Node.js 22.12 or later, Git, tmux, and the `codex` and `claude`
-commands, signed in. macOS and Linux are supported, including iTerm2.
+commands, signed in. macOS and Linux are supported, including iTerm2. On Linux,
+unattended workers also need `bubblewrap` and `socat` for Claude Code's
+sandbox. This version was tested with Codex CLI 0.155.1 and Claude Code
+2.1.283; `model-collab doctor` reports an older CLI that lacks a flag the
+workers use.
 
 ```sh
 git clone https://github.com/Arth-Singh/Model-Collab.git

@@ -144,8 +144,10 @@ edits.
 | `apply`                        | Apply the agreed candidate (or `--candidate mN`)   |
 | `pause`, `resume`, `stop`      | Control the current collaboration                  |
 | `note "instruction"`           | Send a shared user correction                      |
-| `board search`, `board post`   | Read or add to the project board                   |
+| `board search`, `board post`   | Search or add to the project board                 |
+| `board threads`, `board read`  | List threads or read a thread or post              |
 | `memory show`, `memory update` | Read or refresh the project memory                 |
+| `memory clear`                 | Delete the memory; history and the board stay      |
 | `init`                         | Prepare context and settings before starting       |
 | `start "goal"`                 | Start the protocol with agents you launch yourself |
 | `launch --agent codex`         | Open one native interface in this pane             |

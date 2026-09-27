@@ -33,7 +33,7 @@ The bounded exchange completed on this task and produced the outcomes above. Pai
 
 This is one task with an explicit recurrence, so the results do not establish better research ability or general coding performance. Ten repetitions measure consistency on that task. The 27 checks are not 27 independent research problems. A useful next comparison needs harder, varied tasks where the baselines leave room for improvement.
 
-The benchmark used a separate, bounded answer-exchange prompt with tools disabled. It did not exercise the full interactive terminal workflow or the current repository collaboration prompts. The prompt revisions in this repository were made after this evaluation began and have not been compared in a new model evaluation.
+The benchmark used a separate, bounded answer-exchange prompt with tools disabled. It did not exercise the full interactive terminal workflow or the current repository collaboration prompts. The protocol has since been redesigned. [Evaluation](evaluation.md) measures the current version on a different benchmark.
 
 ## Provenance
 
