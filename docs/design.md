@@ -113,10 +113,18 @@ smaller candidate ID. The ambiguity and both confidences are recorded for the
 user. A session ends unresolved only when every candidate has a demonstrated
 defect, and nothing is applied then.
 
+Stated confidence is not calibrated confidence, which ReConcile relies on. In
+the [evaluation](evaluation.md), an agent that claimed 90 on the strength of text
+that did not cover the question won over a correct peer at 70. Explicit project
+text has the opposite failure: when an exercise's instructions and its hidden
+tests disagree, the pair follows the instructions, while an agent working alone
+may follow its memory of the tests.
+
 ## What this does not claim
 
-These rules come from published findings. They have not yet been shown to make
-this pair better than a strong solo agent on your tasks. The
-[early findings](findings.md) found no accuracy advantage on the tasks tested so
-far. Run the comparison on work that matters to you before relying on it, and
+These rules come from published findings. They have not been shown to make
+this pair better than a strong solo agent. The [evaluation](evaluation.md) found
+the pair far ahead of Codex alone and slightly behind Claude Code alone on hard
+programming exercises, at several times the cost, and the
+[early findings](findings.md) found no accuracy advantage either. Run the comparison on work that matters to you before relying on it, and
 judge it by results, not by how much the agents agreed.

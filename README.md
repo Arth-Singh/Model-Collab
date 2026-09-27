@@ -144,16 +144,28 @@ See [configuration](docs/configuration.md) for all settings.
 
 ## Does it help?
 
-Not proven yet. Earlier pilots, run on the previous protocol, found no accuracy
-advantage over a single strong agent. Every setup solved an
-[RL programming task](docs/findings.md), and a small
-[ResearchCodeBench pilot](docs/research-code.md) was too ambiguous to separate
-them. This version was redesigned around those results. Measure it on your own
-hard problems and judge it by what ships.
+On [20 hard programming exercises](docs/evaluation.md), graded by hidden tests
+over three trials:
+
+| Setup                          | Pass rate | Claude cost per task | Minutes per task |
+| ------------------------------ | --------- | -------------------- | ---------------- |
+| Codex alone                    | 62%       | —                    | 1.3              |
+| Claude Code alone              | 92%       | $0.23                | 0.6              |
+| Codex and Claude Code together | 85%       | $0.76                | 3.8              |
+
+The pair fixes most of Codex's mistakes but does not beat Claude Code alone, at
+about three times the cost. On 21 held-out exercises it broke nothing either
+agent solved alone. Where it lost, the agents disagreed on something no test
+could settle and picked the wrong reading. Earlier pilots on an
+[RL programming task](docs/findings.md) and
+[ResearchCodeBench](docs/research-code.md) found no advantage over a strong solo
+agent either. Use it when an independent second check is worth the cost, and
+measure it on your own problems.
 
 ## Documentation
 
 - [Design](docs/design.md): the research behind each protocol rule
+- [Evaluation](docs/evaluation.md): the pair against each agent alone, with the harness
 - [Usage](docs/usage.md): existing panes, project context, and unattended sessions
 - [Configuration](docs/configuration.md): models, limits, checks, and CLI options
 - [Protocol](docs/protocol.md): worktrees, candidates, messages, the board, memory, and applying
