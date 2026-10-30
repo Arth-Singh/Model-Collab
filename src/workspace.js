@@ -184,6 +184,159 @@ async function linkDependencies(base, dir) {
   }
 }
 
+/**
+ * A bare repository whose `main` starts at the base snapshot. It borrows the
+ * project's objects through Git alternates instead of copying them, so only the
+ * swarm's own commits are stored in it. History may only move forward.
+ */
+export async function createOrigin(base, dir) {
+  await fs.rm(dir, { recursive: true, force: true });
+  await fs.mkdir(path.dirname(dir), { recursive: true });
+  await git(path.dirname(dir), ['init', '-q', '--bare', dir]);
+  const objects = text(
+    await git(base.top, ['rev-parse', '--path-format=absolute', '--git-path', 'objects']),
+  );
+  await fs.writeFile(path.join(dir, 'objects', 'info', 'alternates'), `${objects}\n`);
+  await git(dir, ['update-ref', 'refs/heads/main', base.commit]);
+  await git(dir, ['symbolic-ref', 'HEAD', 'refs/heads/main']);
+  await git(dir, ['config', 'receive.denyNonFastForwards', 'true']);
+  await git(dir, ['config', 'receive.denyDeletes', 'true']);
+  return dir;
+}
+
+/**
+ * Clone the origin for one agent. The Git directory lives outside the
+ * workspace: Codex's sandbox makes any `.git` inside a writable root read-only,
+ * so the agent could not commit. Commits carry the agent's name.
+ */
+export async function cloneForAgent(base, origin, { workspace, gitDir, name }) {
+  for (const dir of [workspace, gitDir]) {
+    await fs.rm(dir, { recursive: true, force: true });
+    await fs.mkdir(path.dirname(dir), { recursive: true });
+  }
+  await git(path.dirname(workspace), [
+    'clone',
+    '-q',
+    '--separate-git-dir',
+    gitDir,
+    origin,
+    workspace,
+  ]);
+  const settings = {
+    'user.name': name,
+    'user.email': `${name}@model-collab.local`,
+    'pull.rebase': 'true',
+    'rebase.autoStash': 'true',
+    // The user's global hooks and signing keys belong to the user, not to agents.
+    'core.hooksPath': '/dev/null',
+    'commit.gpgsign': 'false',
+    'tag.gpgsign': 'false',
+  };
+  for (const [key, value] of Object.entries(settings)) await git(workspace, ['config', key, value]);
+  // Links to shared dependency folders and Go's cache are never part of the work.
+  // No trailing slash: a symlink is a file to Git's ignore rules.
+  const excluded = [...base.links, '.gocache'].map((entry) => `/${entry}`).join('\n');
+  await fs.appendFile(path.join(gitDir, 'info', 'exclude'), `\n${excluded}\n`);
+  await linkDependencies(base, workspace);
+  return path.join(workspace, base.prefix);
+}
+
+/** The commit at the tip of the origin's `main`. */
+export async function originHead(origin) {
+  return text(await git(origin, ['rev-parse', 'refs/heads/main']));
+}
+
+/** Commits on `main` after `since`, oldest first. */
+export async function originLog(origin, since, { limit = 500 } = {}) {
+  const output = text(
+    await git(origin, [
+      'log',
+      '--reverse',
+      `--max-count=${limit}`,
+      '--format=%H%x1f%an%x1f%aI%x1f%s',
+      `${since}..refs/heads/main`,
+    ]),
+  );
+  return output
+    ? output.split('\n').map((line) => {
+        const [commit, author, at, subject] = line.split('\x1f');
+        return { commit, author, at, subject };
+      })
+    : [];
+}
+
+/**
+ * Copy every file that differs between the base and `commit` into
+ * `destination`, and describe each change the way `applyChanges` expects.
+ */
+export async function commitChanges(origin, base, commit, destination) {
+  const linked = (file) =>
+    base.links.some((entry) => file === entry || file.startsWith(`${entry}/`));
+  const diff = nulList(
+    (await git(origin, ['diff', '--name-status', '--no-renames', '-z', base.commit, commit, '--']))
+      .stdout,
+  );
+  const changes = [];
+  let total = 0;
+  for (let i = 0; i + 1 < diff.length; i += 2) {
+    const code = diff[i][0],
+      relative = safeRelative(diff[i + 1]);
+    if (linked(relative) || relative.split('/')[0] === '.collab') continue;
+    if (changes.length >= MAX_CHANGED_FILES)
+      fail(`A result may change at most ${MAX_CHANGED_FILES} files.`);
+    if (code === 'D') {
+      changes.push({ path: relative, status: 'deleted' });
+      continue;
+    }
+    const listed = nulList(
+      (
+        await git(origin, ['ls-tree', '-z', commit, '--', relative], {
+          env: { GIT_LITERAL_PATHSPECS: '1' },
+        })
+      ).stdout,
+    )[0];
+    const [mode, , object] = listed.slice(0, listed.indexOf('\t')).split(' ');
+    if (mode === '160000') fail(`Submodule changes cannot be applied: ${relative}`);
+    const content = (await git(origin, ['cat-file', 'blob', object])).stdout;
+    const status = code === 'A' ? 'added' : 'modified';
+    if (mode === '120000') {
+      const target = content.toString('utf8');
+      changes.push({ path: relative, status, symlink: target, sha256: sha256(content) });
+      continue;
+    }
+    if (content.length > MAX_FILE_BYTES) fail(`Changed file is larger than 10 MiB: ${relative}`);
+    total += content.length;
+    if (total > MAX_TOTAL_BYTES) fail('A result may change at most 50 MiB of files.');
+    const target = path.join(destination, relative);
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, content);
+    changes.push({
+      path: relative,
+      status,
+      executable: mode === '100755',
+      sha256: sha256(content),
+    });
+  }
+  return changes;
+}
+
+/** A fresh, Git-free copy of `commit` with dependency links, for running checks. */
+export async function checkoutCommit(origin, base, commit, dir) {
+  await fs.rm(dir, { recursive: true, force: true });
+  await fs.mkdir(dir, { recursive: true });
+  const archive = spawn('git', ['archive', '--format=tar', commit], {
+    cwd: origin,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let archiveError = '';
+  archive.stderr.on('data', (chunk) => (archiveError += chunk));
+  const extracted = await run('tar', ['-x', '-f', '-', '-C', dir], { stdin: archive.stdout });
+  if (extracted.code !== 0)
+    fail(`Could not check out ${commit}: ${archiveError.trim() || extracted.stderr.trim()}`);
+  await linkDependencies(base, dir);
+  return path.join(dir, base.prefix);
+}
+
 export async function createWorkspace(base, dir) {
   await removeWorkspace(base.top, dir);
   await fs.mkdir(path.dirname(dir), { recursive: true });
