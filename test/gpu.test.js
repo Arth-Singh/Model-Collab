@@ -188,3 +188,26 @@ test('jobs are capped at the configured time limit and refuse bad input', async 
   const failed = (await gpu.jobs()).find((j) => j.commit === 'f'.repeat(40));
   assert.equal(failed.state, 'failed_to_start');
 });
+
+test('a failed prepare step or a missing dataset launches nothing', async (t) => {
+  const { origin, remote, jobs } = await setup(t, { prepare: 'false' });
+  const gpu = jobs();
+  const commit = await originHead(origin);
+  await assert.rejects(
+    gpu.start({ agent: 'codex-2', commit, args: ['0'] }),
+    /Starting the job failed/,
+  );
+  const tree = path.join(remote, 'jobs', 'abcdef12', 'j1-codex-2');
+  await assert.rejects(fs.access(path.join(tree, 'job.log')));
+  assert.deepEqual((await gpu.list()).free, [6, 7]);
+  const missing = await setup(t);
+  await assert.rejects(
+    missing.jobs().start({
+      agent: 'codex-2',
+      commit: await originHead(missing.origin),
+      dataset: 'no-such-dataset',
+      args: ['0'],
+    }),
+    /Starting the job failed/,
+  );
+});

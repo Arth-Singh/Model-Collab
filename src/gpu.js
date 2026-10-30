@@ -25,6 +25,10 @@ const fail = (message) => {
 };
 const quote = (value) => `'${String(value).replaceAll("'", `'\\''`)}'`;
 const home = (file) => file.replace(/^~(?=$|\/)/, os.homedir());
+// A host path for a shell that has changed directory: relative paths are
+// relative to the host user's home, as they are for the first SSH command.
+const hostPath = (file) =>
+  file.startsWith('/') ? quote(file) : `"$HOME"/${quote(file.replace(/^~\/?/, ''))}`;
 
 /** Run a shell script on the host (over SSH, or locally for host "local"). */
 export function hostShell(gpu, script, { input, timeoutMs = 120_000 } = {}) {
@@ -219,7 +223,7 @@ export class GpuJobs {
     if (job.dataset)
       steps.push(
         `mkdir -p ${quote(gpu.datasetTarget)}`,
-        `cp -R ${quote(`${gpu.datasetSource}/${job.dataset}`)} ${quote(`${gpu.datasetTarget}/${job.dataset}`)}`,
+        `cp -R ${hostPath(`${gpu.datasetSource}/${job.dataset}`)} ${quote(`${gpu.datasetTarget}/${job.dataset}`)}`,
       );
     const command = jobCommand(gpu, {
       job: job.id,
@@ -229,11 +233,12 @@ export class GpuJobs {
       args: job.args,
     });
     // Job control (set -m) gives the job a process group of its own, so cancel
-    // can stop all of it; setsid is missing on macOS.
+    // can stop all of it; setsid is missing on macOS. The braces keep the launch
+    // inside the && chain: a failed step before it starts nothing.
     const body = `${command.map(quote).join(' ')}; echo $? > exit-code`;
     steps.push(
       `printf '%s\\n' ${quote(command.map(quote).join(' '))} > job.cmd`,
-      `set -m; nohup sh -c ${quote(body)} > job.log 2>&1 < /dev/null & echo $!`,
+      `{ set -m; nohup sh -c ${quote(body)} > job.log 2>&1 < /dev/null & echo $!; }`,
     );
     const started = await this.shell(gpu, `set -e; ${steps.join(' && ')}`, { timeoutMs: 600_000 });
     const pid = Number(started.stdout.trim().split('\n').at(-1));
@@ -246,7 +251,7 @@ export class GpuJobs {
   async status(id) {
     const jobs = await this.jobs();
     const job = jobs.find((j) => j.id === id) ?? fail(`No job named ${id}.`);
-    if (job.state !== 'running' && job.state !== 'cancelled') return { ...job, log: null };
+    if (job.state === 'starting' || job.state === 'failed_to_start') return { ...job, log: null };
     const result = await this.shell(
       this.gpu,
       `cd ${quote(job.tree)} || exit 3; if [ -f exit-code ]; then echo "exit $(cat exit-code)"; elif kill -0 ${job.pid} 2>/dev/null; then echo running; else echo lost; fi; echo ---; tail -c 6000 job.log 2>/dev/null`,
@@ -255,7 +260,7 @@ export class GpuJobs {
       return { ...job, log: null, error: `GPU host unreachable: ${result.stderr.trim()}` };
     const [head, ...rest] = result.stdout.split('\n---\n');
     const changes = {};
-    if (head.startsWith('exit '))
+    if (head.startsWith('exit ') && job.state !== 'finished')
       Object.assign(changes, { state: 'finished', exitCode: Number(head.slice(5)) });
     else if (head.trim() === 'lost' && job.state === 'running') changes.state = 'lost';
     const updated = Object.keys(changes).length ? await this.update(id, changes) : job;
