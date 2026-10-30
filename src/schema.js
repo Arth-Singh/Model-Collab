@@ -4,6 +4,29 @@ export const agentId = z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/);
 const checkName = z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/);
 const envName = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/);
 
+// A GPU host agents may start jobs on, through their MCP server. `command` is
+// the user's launcher; agents fill only its {args} slot.
+export const gpuSchema = z
+  .object({
+    host: z.string().min(1),
+    identity: z.string().min(1).optional(),
+    dir: z.string().min(1),
+    gpus: z.array(z.number().int().min(0).max(63)).min(1).max(64),
+    maxMinutes: z.number().min(1).max(1440).default(120),
+    prepare: z.string().max(8000).optional(),
+    command: z
+      .array(z.string())
+      .min(1)
+      .max(80)
+      .refine((command) => command.filter((part) => part === '{args}').length === 1, {
+        message: 'The GPU command needs exactly one {args} slot.',
+      }),
+    datasetFlag: z.string().min(1).optional(),
+    datasetSource: z.string().min(1).optional(),
+    datasetTarget: z.string().min(1).default('data'),
+  })
+  .strict();
+
 export const configSchema = z
   .object({
     preset: z.enum(['coding', 'research']).default('coding'),
@@ -14,7 +37,9 @@ export const configSchema = z
       .object({ claude: z.string().min(1).optional(), codex: z.string().min(1).optional() })
       .strict()
       .default({}),
-    effort: z.string().min(1).default('high'),
+    effort: z.string().min(1).default('xhigh'),
+    // Codex's service tier; "fast" is about 2x speed at higher usage. null for the standard tier.
+    codexServiceTier: z.string().min(1).nullish().default('fast'),
     // The whole run; sessions inside it; and how many sessions one agent may start.
     deadlineMinutes: z.number().min(0.1).max(1440).default(60),
     sessionMinutes: z.number().min(0.1).max(240).default(30),
@@ -51,6 +76,7 @@ export const configSchema = z
     // Extra environment variables agents may see; secrets stay out by default.
     passEnv: z.array(envName).max(50).default([]),
     chatCommand: z.string().min(1).default('swarmchat'),
+    gpu: gpuSchema.nullish(),
   })
   .strict()
   .refine((config) => config.claude + config.codex >= 1, {

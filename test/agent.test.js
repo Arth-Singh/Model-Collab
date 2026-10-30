@@ -94,6 +94,15 @@ test('Codex sessions are sandboxed, offline, and may write their Git directory a
     ['/w/git', '/o.git'],
   );
   assert.ok(args.includes('web_search="disabled"'));
+  assert.ok(!args.some((a) => a.startsWith('service_tier')), 'standard tier unless asked');
+  const fast = sessionArgs({
+    agent: { ...agent('codex'), serviceTier: 'fast' },
+    origin: '/o.git',
+    mcp,
+    schemaFile: '/s.json',
+    finalFile: '/f.json',
+  });
+  assert.equal(fast[fast.indexOf('service_tier="fast"') - 1], '-c');
   assert.ok(args.includes(`mcp_servers.model_collab.args=${JSON.stringify(mcp.args)}`));
   assert.equal(value('--cd'), '/w/work');
   assert.equal(value('--model'), 'codex-test');

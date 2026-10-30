@@ -101,6 +101,11 @@ export function sessionPrompt({ run, config, agent, context }) {
     checks.length
       ? `Configured checks (swarm_check runs one on main): ${checks.map(([name, argv]) => `${name}: ${argv.join(' ')}`).join('; ')}.`
       : 'No checks are configured. Agree on a shared test command in #general.',
+    ...(config.gpu
+      ? [
+          `GPU host: ${config.gpu.gpus.length} GPUs (${config.gpu.gpus.join(', ')}), shared by the whole swarm, through gpu_run, gpu_jobs, gpu_status, gpu_read, and gpu_cancel. A job runs a commit already on origin in a fresh directory as: ${config.gpu.command.join(' ')}. Your args fill {args}; at most ${config.gpu.maxMinutes} minutes per job. Check gpu_jobs before you start one, announce it in #general with its purpose, and follow the repository's rules for runs.`,
+        ]
+      : []),
     '',
     "THE USER'S GOAL",
     run.goal,
@@ -262,6 +267,7 @@ export async function runSwarm({
     backend,
     model: config.models[backend] ?? DEFAULT_MODELS[backend],
     effort: config.effort ?? DEFAULT_EFFORT,
+    serviceTier: backend === 'codex' ? (config.codexServiceTier ?? null) : null,
     cloneDir: path.join(store.runDir, 'work', id),
     gitDir: path.join(store.runDir, 'git', id),
     workspace: null,

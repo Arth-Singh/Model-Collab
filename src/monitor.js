@@ -125,6 +125,19 @@ export class RunMonitor {
       new Map(),
     );
     for (const agent of agents) values[`agent_commits/${agent.id}`] = authors.get(agent.id) ?? 0;
+    if (run.config.gpu) {
+      const jobs = await fs
+        .readFile(path.join(this.store.runDir, 'gpu-jobs.json'), 'utf8')
+        .then(JSON.parse, () => []);
+      values['gpu/jobs_started'] = jobs.length;
+      values['gpu/jobs_running'] = jobs.filter((j) => j.state === 'running').length;
+      values['gpu/jobs_failed'] = jobs.filter(
+        (j) => j.state === 'failed_to_start' || (j.state === 'finished' && j.exitCode !== 0),
+      ).length;
+      values['gpu/gpus_in_jobs'] = jobs
+        .filter((j) => j.state === 'running')
+        .reduce((total, j) => total + j.gpus.length, 0);
+    }
     for (const round of run.checkRounds.slice(this.loggedRounds)) {
       values['checks/passed_fraction'] =
         round.results.filter((r) => r.passed).length / Math.max(1, round.results.length);

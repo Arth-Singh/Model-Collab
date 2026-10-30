@@ -6,6 +6,8 @@ import { ChatClient } from './chat.js';
 import { Store, isOpen } from './store.js';
 import { originHead, originLog } from './workspace.js';
 import { runChecks } from './swarm.js';
+import { GpuJobs } from './gpu.js';
+import { git } from './workspace.js';
 
 // The tools one agent's CLI sees. The server runs outside the agent's sandbox,
 // so it can reach the local chat server with the agent's own token; the agent
@@ -211,6 +213,81 @@ export async function serve(root, agentId) {
       return { commit, ...result };
     },
   );
+  if (run.config.gpu) registerGpuTools(tool, store, agentId);
   await server.connect(new StdioServerTransport());
   return server;
+}
+
+function registerGpuTools(tool, store, agentId) {
+  const jobs = async () => {
+    const { run } = await store.read();
+    return { run, gpu: new GpuJobs({ store, run, gpu: run.config.gpu }) };
+  };
+  tool(
+    'gpu_run',
+    "Start a job on the GPU host. It runs a commit that is already on origin (default: main's head), in a fresh directory, inside the project's launcher; your args fill the launcher's argument slot. Push first. Returns the job ID; poll it with gpu_status.",
+    {
+      args: z.array(z.string().max(2000)).max(200),
+      gpus: z.number().int().min(1).max(64).default(1),
+      minutes: z.number().min(1).max(1440).optional(),
+      dataset: z.string().max(100).optional(),
+      commit: z
+        .string()
+        .regex(/^[0-9a-f]{7,40}$/)
+        .optional(),
+    },
+    async ({ args, gpus, minutes, dataset, commit }) => {
+      const { run, gpu } = await jobs();
+      const ref = commit ?? 'refs/heads/main';
+      const found = await git(run.origin, ['rev-parse', '--verify', '-q', `${ref}^{commit}`], {
+        allowFailure: true,
+      });
+      if (found.code !== 0) throw new Error(`Commit ${ref} is not on origin. Push it first.`);
+      const { log, ...job } = await gpu.start({
+        agent: agentId,
+        commit: found.stdout.toString().trim(),
+        gpus,
+        minutes,
+        dataset,
+        args,
+      });
+      return { ...job, logTail: log };
+    },
+  );
+  tool(
+    'gpu_jobs',
+    'Every GPU job of this run with its state, owner, GPUs, and commit, plus which GPUs are free.',
+    {},
+    async () => (await jobs()).gpu.list(),
+    true,
+  );
+  tool(
+    'gpu_status',
+    "A job's state (running, finished with its exit code, cancelled, or lost) and the end of its log.",
+    { job: z.string().max(80) },
+    async ({ job }) => (await jobs()).gpu.status(job),
+    true,
+  );
+  tool(
+    'gpu_read',
+    "Read a text file a job wrote, by path relative to the job's directory (for example results/<job>/summary.json). A directory lists its files.",
+    {
+      job: z.string().max(80),
+      path: z.string().min(1).max(500),
+      maxBytes: z.number().int().min(1).max(200000).default(50000),
+    },
+    async ({ job, path: file, maxBytes }) => (await jobs()).gpu.read(job, file, { maxBytes }),
+    true,
+  );
+  tool(
+    'gpu_cancel',
+    'Stop one of your own running jobs. Its GPUs stay reserved until its time limit passes, in case its container is still running.',
+    { job: z.string().max(80) },
+    async ({ job }) => {
+      const { gpu } = await jobs();
+      const entry = (await gpu.jobs()).find((j) => j.id === job);
+      if (entry && entry.agent !== agentId) throw new Error(`${job} belongs to ${entry.agent}.`);
+      return gpu.cancel(job);
+    },
+  );
 }

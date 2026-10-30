@@ -73,7 +73,10 @@ test('settings are created, changed, and shown without starting agents', async (
   const run = cliRunner(root);
   const init = await run('init', '--agents', '5', '--minutes', '45');
   assert.ok(init.ok, init.stderr);
-  assert.match(init.stdout, /Swarm: 3 Claude Code \(claude-opus-5-5\) \+ 2 Codex \(gpt-6-astra\)/);
+  assert.match(
+    init.stdout,
+    /Swarm: 3 Claude Code \(claude-opus-5-5\) \+ 2 Codex \(gpt-6\.1-sol, fast tier\), effort xhigh/,
+  );
   assert.match(init.stdout, /45 minutes per run/);
   assert.match(await fs.readFile(path.join(root, '.gitignore'), 'utf8'), /^\.collab\/$/m);
   await fs.access(path.join(root, '.collab', 'CONTEXT.md'));

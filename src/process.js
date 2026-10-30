@@ -104,10 +104,10 @@ export function delay(ms, signal) {
 }
 
 export const DEFAULT_MODELS = Object.freeze({
-  codex: 'gpt-6-astra',
+  codex: 'gpt-6.1-sol',
   claude: 'claude-opus-5-5',
 });
-export const DEFAULT_EFFORT = 'high';
+export const DEFAULT_EFFORT = 'xhigh';
 
 /**
  * Run without a shell. Bound output and terminate the whole POSIX process group.

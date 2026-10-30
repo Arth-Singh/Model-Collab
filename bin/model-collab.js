@@ -49,6 +49,7 @@ function settingOptions(command) {
     .option('--claude-model <model>', `Claude model (default ${DEFAULT_MODELS.claude})`)
     .option('--codex-model <model>', `Codex model (default ${DEFAULT_MODELS.codex})`)
     .option('--effort <level>', 'Reasoning effort for both CLIs')
+    .option('--codex-service-tier <tier>', 'Codex service tier, such as fast; none for standard')
     .option('--minutes <n>', 'Deadline for the whole run', Number)
     .option('--session-minutes <n>', 'Time limit for one agent session', Number)
     .option('--max-sessions <n>', 'Sessions one agent may start in a run', Number)
@@ -64,6 +65,7 @@ function settingOptions(command) {
     .option('--monitor-seconds <n>', 'How often the TensorBoard scalars are sampled', Number)
     .option('--score <json>', 'Command (JSON argv array) that scores main during a run, or @file')
     .option('--score-seconds <n>', 'How often the score command runs', Number)
+    .option('--gpu <json>', 'GPU host agents may start jobs on, as JSON or @file; none removes it')
     .option('--preset <name>', 'coding or research');
 }
 
@@ -78,6 +80,12 @@ async function settingChanges(opts, current = {}) {
     claude: opts.claude ?? (opts.agents === undefined ? undefined : Math.ceil(opts.agents / 2)),
     codex: opts.codex ?? (opts.agents === undefined ? undefined : Math.floor(opts.agents / 2)),
     effort: opts.effort,
+    codexServiceTier:
+      opts.codexServiceTier === undefined
+        ? undefined
+        : opts.codexServiceTier === 'none'
+          ? null
+          : opts.codexServiceTier,
     deadlineMinutes: opts.minutes,
     sessionMinutes: opts.sessionMinutes,
     maxSessions: opts.maxSessions,
@@ -93,6 +101,8 @@ async function settingChanges(opts, current = {}) {
     monitorSeconds: opts.monitorSeconds,
     scoreCommand: opts.score === undefined ? undefined : await jsonInput(opts.score),
     scoreSeconds: opts.scoreSeconds,
+    gpu:
+      opts.gpu === undefined ? undefined : opts.gpu === 'none' ? null : await jsonInput(opts.gpu),
     memory: opts.memory,
   };
   if (opts.claudeModel || opts.codexModel)
@@ -108,7 +118,7 @@ function renderConfig(config) {
   const models = { ...DEFAULT_MODELS, ...config.models };
   return [
     'Project settings',
-    `Swarm: ${config.claude} Claude Code (${models.claude}) + ${config.codex} Codex (${models.codex}), effort ${config.effort}`,
+    `Swarm: ${config.claude} Claude Code (${models.claude}) + ${config.codex} Codex (${models.codex}${config.codexServiceTier ? `, ${config.codexServiceTier} tier` : ''}), effort ${config.effort}`,
     `Limits: ${config.deadlineMinutes} minutes per run, ${config.sessionMinutes} per session, ${config.maxSessions} sessions per agent`,
     `Ends after every agent waits ${config.quietSeconds} seconds and the checks pass (at most ${config.maxCheckRounds} check rounds)`,
     `Checks: ${Object.keys(config.checks).join(', ') || 'none'} (timeout ${config.checkTimeoutSeconds} seconds)`,
@@ -116,6 +126,7 @@ function renderConfig(config) {
     `Extra environment for agents: ${config.passEnv.join(', ') || 'none'}`,
     `TensorBoard: ${config.tensorboard ? `on, every ${config.monitorSeconds} seconds, in ${config.tensorboardDir ?? '.collab/tensorboard'}` : 'off'}`,
     `Score: ${config.scoreCommand.length ? `${config.scoreCommand.join(' ')}, every ${config.scoreSeconds} seconds` : 'none'}`,
+    `GPU host: ${config.gpu ? `${config.gpu.host}, GPUs ${config.gpu.gpus.join(', ')}, at most ${config.gpu.maxMinutes} minutes per job` : 'none'}`,
     `Project memory: ${config.memory ? 'on' : 'off'}`,
   ].join('\n');
 }

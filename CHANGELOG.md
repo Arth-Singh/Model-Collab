@@ -30,6 +30,12 @@ pair's commands, MCP tools, board, and tmux panes are gone.
   and tokens in your shell never reach them unless you pass them by name.
 - **Project memory** now folds each run's chat, check results, and agent
   summaries into `.collab/MEMORY.md`.
+- **GPU jobs for agents.** With a `gpu` setting, agents start jobs on a GPU host
+  through their MCP server (`gpu_run`, `gpu_jobs`, `gpu_status`, `gpu_read`,
+  `gpu_cancel`): a pushed commit, a fresh directory, your launcher, and their
+  arguments in its `{args}` slot only. GPUs are reserved per job and never shared.
+- **Defaults.** Codex runs `gpt-6.1-sol` on the `fast` service tier; both CLIs
+  use `xhigh` effort.
 - **TensorBoard.** Every run writes scalars (commits, lines changed, agent
   states, sessions, tokens, chat volume, machine load, per-agent numbers) every
   15 seconds; `model-collab tensorboard` serves them. An optional score command

@@ -148,6 +148,7 @@ export function sessionArgs({ agent, origin, mcp, schemaFile, finalFile }) {
       `model_reasoning_effort=${JSON.stringify(effort)}`,
       '-c',
       'web_search="disabled"',
+      ...(agent.serviceTier ? ['-c', `service_tier=${JSON.stringify(agent.serviceTier)}`] : []),
       '-c',
       `mcp_servers.model_collab.command=${JSON.stringify(mcp.command)}`,
       '-c',

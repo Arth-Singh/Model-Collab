@@ -106,8 +106,9 @@ Give every agent background by editing `.collab/CONTEXT.md` after
 | Setting                | Default                          | Flag                              |
 | ---------------------- | -------------------------------- | --------------------------------- |
 | Agents                 | 9 Claude Code + 9 Codex          | `--agents`, `--claude`, `--codex` |
-| Models                 | `claude-opus-5-5`, `gpt-6-astra` | `--claude-model`, `--codex-model` |
-| Reasoning effort       | `high`                           | `--effort`                        |
+| Models                 | `claude-opus-5-5`, `gpt-6.1-sol` | `--claude-model`, `--codex-model` |
+| Reasoning effort       | `xhigh`                          | `--effort`                        |
+| Codex service tier     | `fast`                           | `--codex-service-tier`            |
 | Run deadline           | 60 minutes                       | `--minutes`                       |
 | One session            | 30 minutes                       | `--session-minutes`               |
 | Sessions per agent     | 40                               | `--max-sessions`                  |
