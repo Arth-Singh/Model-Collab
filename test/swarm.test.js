@@ -286,3 +286,38 @@ test(
     assert.match(stale.stopReason, /supervisor exited/);
   },
 );
+
+test(
+  'stop closes a run whose supervisor died, keeping its result for apply',
+  { skip },
+  async (t) => {
+    const root = await gitProject(t, 'model-collab-swarm-');
+    const { session } = scripted(root, async ({ agent, signal }) => {
+      await push(agent.workspace, { 'kept.txt': 'kept\n' }, 'Work before the crash');
+      return untilAborted(signal);
+    });
+    const controller = new AbortController();
+    const running = runSwarm({
+      root,
+      goal: 'Crash halfway',
+      overrides: { ...fast, claude: 1, codex: 0 },
+      session,
+      signal: controller.signal,
+      onEvent: (event) => event.event === 'push' && controller.abort(),
+    });
+    await running;
+    // Make the finished run look like one whose supervisor was killed mid-run.
+    const store = new Store(root);
+    await store.update((state) => {
+      state.run.status = 'running';
+      state.run.supervisorPid = 2 ** 22 + 54321;
+      state.run.result = null;
+      state.run.endedAt = null;
+    });
+    const closed = await stopRun(root, 'cleaning up');
+    assert.equal(closed.status, 'stopped');
+    assert.match(closed.stopReason, /supervisor had already exited/);
+    assert.equal(closed.result.commits, 1);
+    assert.deepEqual(await applyLatest(root), ['kept.txt']);
+  },
+);

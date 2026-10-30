@@ -131,17 +131,19 @@ export class Store {
       if (await this.load()) throw new Error('Already initialized. Existing settings were kept.');
       const state = { schemaVersion: STATE_VERSION, config, run: null };
       await this.write(state);
-      await prepareProject(this.root);
+      await prepareProject(this.root, config);
       return state;
     });
   }
 
   async configure(changes) {
-    return this.update((state) => {
+    const state = await this.update((state) => {
       if (isOpen(state.run)) throw new Error('Change settings after the current run ends.');
       state.config = configSchema.parse({ ...state.config, ...changes });
       return state;
     });
+    await prepareProject(this.root, state.config);
+    return state;
   }
 
   /** Move the finished run's record and logs to history; agents' clones are deleted. */
@@ -160,19 +162,27 @@ export class Store {
   }
 }
 
-/** Shared context file and a .gitignore entry, created once per project. */
-export async function prepareProject(root) {
+const writeOnce = (file, text) =>
+  fs.writeFile(file, text, { flag: 'wx' }).catch((error) => {
+    if (error.code !== 'EEXIST') throw error;
+  });
+
+/**
+ * Shared context files and a .gitignore entry, created once per project; the
+ * research preset adds a brief for the question, sources, and budget.
+ */
+export async function prepareProject(root, config = {}) {
   const dir = path.join(root, '.collab');
   await fs.mkdir(dir, { recursive: true });
-  await fs
-    .writeFile(
-      path.join(dir, 'CONTEXT.md'),
-      '# Shared project context\n\nAdd architecture, constraints, relevant paths, and commands here. Every agent reads this file at the start of each session.\n',
-      { flag: 'wx' },
-    )
-    .catch((error) => {
-      if (error.code !== 'EEXIST') throw error;
-    });
+  await writeOnce(
+    path.join(dir, 'CONTEXT.md'),
+    '# Shared project context\n\nAdd architecture, constraints, relevant paths, and commands here. Every agent reads this file at the start of each session.\n',
+  );
+  if (config.preset === 'research')
+    await writeOnce(
+      path.join(dir, 'RESEARCH.md'),
+      '# Research brief\n\n- Research question:\n- Environment / dataset:\n- Relevant papers and source locations:\n- Existing implementation and baselines:\n- Compute, time, and data constraints:\n- Success metrics and uncertainty:\n- Known findings and unresolved assumptions:\n\nFill this in with project-specific context. Leave unknowns explicit.\n',
+    );
   const ignorePath = path.join(root, '.gitignore');
   const ignore = await fs.readFile(ignorePath, 'utf8').catch((error) => {
     if (error.code === 'ENOENT') return '';

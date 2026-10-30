@@ -78,6 +78,12 @@ test('settings are created, changed, and shown without starting agents', async (
   assert.match(await fs.readFile(path.join(root, '.gitignore'), 'utf8'), /^\.collab\/$/m);
   await fs.access(path.join(root, '.collab', 'CONTEXT.md'));
   assert.match((await run('init')).stderr, /Already initialized/);
+  await assert.rejects(fs.access(path.join(root, '.collab', 'RESEARCH.md')));
+  assert.ok((await run('configure', '--preset', 'research')).ok);
+  assert.match(
+    await fs.readFile(path.join(root, '.collab', 'RESEARCH.md'), 'utf8'),
+    /# Research brief/,
+  );
 
   const changed = JSON.parse(
     (

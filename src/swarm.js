@@ -165,6 +165,30 @@ export async function stopOrphans(agents = []) {
   return stopped;
 }
 
+/**
+ * Close a run whose supervisor died: stop what it left running and record its
+ * origin's `main` as the result, so `apply` can still take it.
+ */
+async function closeDeadRun(run, status, reason) {
+  await stopOrphans(run.agents);
+  await stopStaleServer(run.chat?.pid);
+  run.status = status;
+  run.stopReason = reason;
+  run.endedAt = now();
+  for (const agent of run.agents ?? []) agent.pid = null;
+  if (run.origin && run.base && !run.result) {
+    const commit = await originHead(run.origin).catch(() => null);
+    if (commit)
+      run.result = {
+        commit,
+        commits: (await originLog(run.origin, run.base.commit)).length,
+        files: [],
+        applied: null,
+        error: null,
+      };
+  }
+}
+
 /** End a run whose supervisor died, so a new run can start. */
 async function recoverStaleRun(store) {
   const state = await store.load();
@@ -173,13 +197,9 @@ async function recoverStaleRun(store) {
     throw new Error(
       `A run is in progress (supervisor PID ${state.run.supervisorPid}). Stop it with model-collab stop.`,
     );
-  await stopOrphans(state.run.agents);
-  await stopStaleServer(state.run.chat?.pid);
-  await store.update((s) => {
-    s.run.status = 'failed';
-    s.run.stopReason = 'The supervisor exited before the run ended.';
-    s.run.endedAt = now();
-  });
+  await store.update((s) =>
+    closeDeadRun(s.run, 'failed', 'The supervisor exited before the run ended.'),
+  );
 }
 
 /** Run checks on `commit` in a clean checkout. */
@@ -630,11 +650,7 @@ export async function stopRun(root, reason = 'stopped by the user') {
   return store.update(async (state) => {
     if (!isOpen(state.run)) throw new Error('No run is in progress.');
     if (!alive(state.run.supervisorPid)) {
-      await stopOrphans(state.run.agents);
-      await stopStaleServer(state.run.chat?.pid);
-      state.run.status = 'stopped';
-      state.run.stopReason = `${reason} (the supervisor had already exited)`;
-      state.run.endedAt = now();
+      await closeDeadRun(state.run, 'stopped', `${reason} (the supervisor had already exited)`);
       return state.run;
     }
     state.run.stopRequested = reason;
