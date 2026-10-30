@@ -78,7 +78,15 @@ test('settings are created, changed, and shown without starting agents', async (
     /Swarm: 3 Claude Code \(claude-opus-5-5\) \+ 2 Codex \(gpt-6\.1-sol, fast tier\), effort xhigh/,
   );
   assert.match(init.stdout, /45 minutes per run/);
-  assert.match(await fs.readFile(path.join(root, '.gitignore'), 'utf8'), /^\.collab\/$/m);
+  assert.match(
+    await fs.readFile(path.join(root, '.git', 'info', 'exclude'), 'utf8'),
+    /^\.collab\/$/m,
+  );
+  await assert.rejects(fs.access(path.join(root, '.gitignore')), 'no tracked file changes');
+  assert.equal(
+    spawnSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).stdout,
+    '',
+  );
   await fs.access(path.join(root, '.collab', 'CONTEXT.md'));
   assert.match((await run('init')).stderr, /Already initialized/);
   await assert.rejects(fs.access(path.join(root, '.collab', 'RESEARCH.md')));

@@ -157,8 +157,8 @@ model-collab apply
 model-collab init
 ```
 
-creates `.collab/` without starting a run and adds `.collab/` to your
-`.gitignore`. Edit `.collab/CONTEXT.md` with the architecture, constraints,
+creates `.collab/` without starting a run and adds `.collab/` to the
+repository's local exclude file (`.git/info/exclude`), so no tracked file changes. Edit `.collab/CONTEXT.md` with the architecture, constraints,
 relevant paths, and commands every agent should know. Agents also follow the
 repository's `AGENTS.md` or `CLAUDE.md`.
 

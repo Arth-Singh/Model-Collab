@@ -3,6 +3,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import lockfile from 'proper-lockfile';
 import { configSchema } from './schema.js';
+import { git } from './workspace.js';
 
 // `.collab/state.json` holds the project's settings and its latest run. The
 // supervisor is its main writer; CLI commands such as `stop` write through the
@@ -168,8 +169,9 @@ const writeOnce = (file, text) =>
   });
 
 /**
- * Shared context files and a .gitignore entry, created once per project; the
- * research preset adds a brief for the question, sources, and budget.
+ * Shared context files, created once per project; the research preset adds a
+ * brief for the question, sources, and budget. `.collab/` is kept out of Git
+ * through the repository's local exclude file, so no tracked file changes.
  */
 export async function prepareProject(root, config = {}) {
   const dir = path.join(root, '.collab');
@@ -183,16 +185,22 @@ export async function prepareProject(root, config = {}) {
       path.join(dir, 'RESEARCH.md'),
       '# Research brief\n\n- Research question:\n- Environment / dataset:\n- Relevant papers and source locations:\n- Existing implementation and baselines:\n- Compute, time, and data constraints:\n- Success metrics and uncertainty:\n- Known findings and unresolved assumptions:\n\nFill this in with project-specific context. Leave unknowns explicit.\n',
     );
-  const ignorePath = path.join(root, '.gitignore');
-  const ignore = await fs.readFile(ignorePath, 'utf8').catch((error) => {
+  const where = await git(root, ['rev-parse', '--git-path', 'info/exclude'], {
+    allowFailure: true,
+  });
+  if (where.code !== 0) return;
+  const excludePath = path.resolve(root, where.stdout.toString('utf8').trim());
+  const exclude = await fs.readFile(excludePath, 'utf8').catch((error) => {
     if (error.code === 'ENOENT') return '';
     throw error;
   });
-  if (!ignore.split(/\r?\n/).includes('.collab/'))
+  if (!exclude.split(/\r?\n/).includes('.collab/')) {
+    await fs.mkdir(path.dirname(excludePath), { recursive: true });
     await fs.writeFile(
-      ignorePath,
-      `${ignore}${ignore && !ignore.endsWith('\n') ? '\n' : ''}.collab/\n`,
+      excludePath,
+      `${exclude}${exclude && !exclude.endsWith('\n') ? '\n' : ''}.collab/\n`,
     );
+  }
 }
 
 function renderReadme(state) {

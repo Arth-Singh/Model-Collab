@@ -40,6 +40,9 @@ pair's commands, MCP tools, board, and tmux panes are gone.
   states, sessions, tokens, chat volume, machine load, per-agent numbers) every
   15 seconds; `model-collab tensorboard` serves them. An optional score command
   runs on `main` at intervals and plots progress.
+- **No tracked files change.** `.collab/` is ignored through the repository's
+  local `.git/info/exclude`, not by editing its `.gitignore`, so a run's base
+  and result hold only the project's own changes.
 
 ## 0.4.0 — 2026-09-27
 
