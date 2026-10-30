@@ -27,7 +27,7 @@ import {
 } from './workspace.js';
 import { BACKENDS, runSession } from './agent.js';
 import { DEFAULT_EFFORT, DEFAULT_MODELS, delay, runCommand } from './process.js';
-import { RunMonitor } from './monitor.js';
+import { RunMonitor, tensorboardDir } from './monitor.js';
 
 // A run: capture the project, give every agent a clone of a shared origin and
 // a chat account, then keep each agent in a loop of fresh sessions until the
@@ -354,7 +354,7 @@ export async function runSwarm({
     });
     if (config.tensorboard) {
       monitor = new RunMonitor({
-        dir: path.resolve(root, config.tensorboardDir ?? path.join('.collab', 'tensorboard')),
+        dir: tensorboardDir(root, config, env),
         run,
         store,
         config,

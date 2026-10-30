@@ -81,6 +81,28 @@ no agent retired, at any size.
   each ran and reported the same passing check; the contract now tells them
   not to repeat a check a teammate already reported.
 
+## Growth over time
+
+A second task doubled the specification to 48 functions and turned on
+monitoring (commit `9956aa2`): the hidden tests ran as the
+[score command](usage.md#monitor-growth-with-tensorboard) on `main` every 15
+seconds, and every run wrote TensorBoard scalars every 5 seconds. Each size
+ran once, with the same settings as above and a 30-minute deadline.
+
+| Agents          | 50% of hidden tests on `main` | 90%   | 100%  | Run ended | Tokens | Commits | Peak agent memory |
+| --------------- | ----------------------------- | ----- | ----- | --------- | ------ | ------- | ----------------- |
+| 1 (Claude Code) | 167 s                         | 167 s | 167 s | 204 s     | 0.56M  | 2       | 0.5 GB            |
+| 8 (4 + 4)       | 61 s                          | 137 s | 137 s | 199 s     | 4.6M   | 11      | 2.2 GB            |
+| 18 (9 + 9)      | 61 s                          | 122 s | 137 s | 184 s     | 7.1M   | 18      | 4.4 GB            |
+
+Times are seconds from the goal's post, at 15-second score resolution. The
+curves have different shapes. The single agent wrote everything in its
+workspace and pushed once: `main` scored 0 until 167 seconds, then 48. The
+swarms grew `main` in steps as each agent pushed its share, passing half the
+tests after one minute. Both swarms finished the last test 30 seconds before
+the single agent, at 8 and 13 times its tokens; 18 agents reached 90% 15
+seconds sooner than 8 did, and no sooner at 100%. Load stayed under 8.
+
 ## What it does not show
 
 One run per size on one easy task cannot say whether a swarm helps on real

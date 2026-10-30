@@ -72,6 +72,13 @@ model-collab tensorboard   # serves http://127.0.0.1:6006; --port to change
 
 You need TensorBoard itself: `uv tool install tensorboard`. TensorBoard reloads
 while a run writes, so you can watch a run grow live and compare earlier runs.
+To send every project's runs to one board, set an absolute folder in your
+shell profile; a project's own `tensorboardDir` setting still wins:
+
+```sh
+export MODEL_COLLAB_TENSORBOARD_DIR="$HOME/model-collab-runs/tensorboard"
+tensorboard --logdir "$MODEL_COLLAB_TENSORBOARD_DIR"
+```
 
 | Group            | Scalars                                                               |
 | ---------------- | --------------------------------------------------------------------- |

@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { EventWriter, crc32c } from '../src/tensorboard.js';
-import { parseScore, runLabel } from '../src/monitor.js';
+import { parseScore, runLabel, tensorboardDir } from '../src/monitor.js';
 import { readEvents } from './helpers.js';
 
 test('CRC-32C matches the standard check value', () => {
@@ -38,6 +38,13 @@ test('scores are read from the last fraction or number a command prints', () => 
   assert.deepEqual(parseScore('1/2 then 3 / 4'), { score: 3, fraction: 0.75 });
   assert.equal(parseScore('no numbers here'), null);
   assert.deepEqual(parseScore('0/0'), { score: 0, fraction: null });
+});
+
+test('logs go to the project setting, then the environment, then .collab', () => {
+  const shared = { MODEL_COLLAB_TENSORBOARD_DIR: '/runs/tb' };
+  assert.equal(tensorboardDir('/p', { tensorboardDir: 'logs' }, shared), '/p/logs');
+  assert.equal(tensorboardDir('/p', {}, shared), '/runs/tb');
+  assert.equal(tensorboardDir('/p', {}, {}), '/p/.collab/tensorboard');
 });
 
 test('run folders sort by start and name the size and goal', () => {

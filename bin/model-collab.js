@@ -277,12 +277,10 @@ withRepo(
   .option('--port <n>', 'Port for TensorBoard', '6006')
   .option('--host <host>', 'Address TensorBoard listens on', '127.0.0.1')
   .action(async (opts) => {
+    const { tensorboardDir } = await import('../src/monitor.js');
     const store = new Store(opts.repo);
     const { config } = await store.read();
-    const dir = path.resolve(
-      store.root,
-      config.tensorboardDir ?? path.join('.collab', 'tensorboard'),
-    );
+    const dir = tensorboardDir(store.root, config);
     await fs.mkdir(dir, { recursive: true });
     const child = spawn(
       'tensorboard',

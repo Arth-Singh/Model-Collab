@@ -14,6 +14,20 @@ import { delay, runCommand } from './process.js';
 
 const STATES = ['starting', 'working', 'waiting', 'backoff', 'retired', 'stopped'];
 
+/**
+ * Where runs write TensorBoard logs: the project's setting, else
+ * MODEL_COLLAB_TENSORBOARD_DIR (one board for every project), else
+ * .collab/tensorboard. Relative paths are relative to the project.
+ */
+export function tensorboardDir(root, config, env = process.env) {
+  return path.resolve(
+    root,
+    config.tensorboardDir ??
+      env.MODEL_COLLAB_TENSORBOARD_DIR ??
+      path.join('.collab', 'tensorboard'),
+  );
+}
+
 /** A run's folder name: sortable by start, then size and goal, readable in TensorBoard. */
 export function runLabel(run) {
   const slug = run.goal

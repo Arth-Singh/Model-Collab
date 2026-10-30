@@ -54,8 +54,9 @@ A swarm needs at least one agent. Agents are named `claude-1`, `codex-1`,
   supervisor runs the checks and, if they pass, finishes the run.
 - **`maxCheckRounds`** is how many times failing checks may send the swarm back
   to work before the run fails.
-- **`tensorboardDir`** collects every run's TensorBoard scalars. Point several
-  projects at one absolute folder to compare their runs side by side.
+- **`tensorboardDir`** collects every run's TensorBoard scalars. Without it,
+  runs use `MODEL_COLLAB_TENSORBOARD_DIR` if set, else `.collab/tensorboard`.
+  Point several projects at one absolute folder to compare their runs.
 - **`scoreCommand`** runs on `main` in a clean checkout every `scoreSeconds` and
   once more on the final `main`. See [monitoring](usage.md#monitor-growth-with-tensorboard).
 
