@@ -119,11 +119,15 @@ sign-in, so a large swarm reaches subscription usage limits sooner. See
 
 ## Does it help?
 
-The swarm has not been evaluated yet. A smoke test, not an evaluation: one
-Claude Code agent (`claude-haiku-5-5`, low effort) and one Codex agent finished
-a toy `slugify` task in about two minutes, with 4 sessions and 551k tokens, and
-the result was applied. Treat the swarm as an experiment and measure it on
-your own work.
+The swarm has not been evaluated on real work yet. A
+[stress test](docs/stress-test.md) on one Mac ran 1, 4, 8, and 18 agents on 24
+small independent functions. The machine and the subscriptions carried 18
+agents with no failures or usage limits, and agents divided the work without
+duplicating it. But one Claude Code agent finished the same task in 2.4
+minutes with 0.30M tokens; 8 and 18 agents took 2.6 minutes with 10 and 15
+times the tokens. On a task one agent finishes in minutes, a swarm only adds
+cost. Treat the swarm as an experiment and measure it on long tasks of your
+own.
 
 What is known so far comes from others. On
 [ProgramBench](https://github.com/Pranjal2041/swarmchat), the SwarmChat
@@ -146,6 +150,7 @@ cost. That evaluation measures the pair, not the swarm.
 - [Usage](docs/usage.md): running, watching, steering, and applying
 - [Configuration](docs/configuration.md): every setting, checks, and the agents' environment
 - [Troubleshooting](docs/troubleshooting.md): setup, usage limits, stuck runs, and conflicts
+- [Stress test](docs/stress-test.md): 1 to 18 agents on one machine
 - [Evaluation](docs/evaluation.md): the earlier pair against each agent alone
 - [Contributing](CONTRIBUTING.md): development setup and tests
 
