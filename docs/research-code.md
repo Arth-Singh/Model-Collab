@@ -1,5 +1,7 @@
 # Research-code pilot: results and benchmark audit
 
+> This page measures the earlier two-agent pair protocol (0.4.x and before), not the swarm that replaced it in 0.5.0.
+
 This pilot does not establish a quality advantage from collaboration. On the
 2 tasks completed by every setup, reference-test matches were:
 Codex alone 0/2, Claude alone 1/2, Independent pair 0/2, Collaborating pair 0/2. Diffusion timestep search did not complete all conditions and is

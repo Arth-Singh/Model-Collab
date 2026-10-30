@@ -1,13 +1,17 @@
 # Security
 
-Model Collab starts coding agents that edit files and run commands in your
-repository. Report a problem that lets an agent act outside those limits, for
-example:
+Model Collab starts a swarm of coding agents that edit files and run commands
+in your repository. Report a problem that lets an agent act outside those
+limits, for example:
 
-- an unattended worker writing outside its worktree or reaching the network;
-- a peer message, board post, or repository file that makes the tool run a
-  command, change settings, or apply a change the user did not approve;
-- credentials reaching the board, project memory, transcripts, or logs.
+- an agent writing outside its clone, its Git directory, and the shared origin,
+  or reaching the network or the local chat server directly;
+- an agent speaking in the chat as another agent, as you, or as the supervisor;
+- a chat message or repository file that makes the tool run a command, change
+  settings, or apply a change the user did not approve;
+- credentials reaching agents' environments, the chat, project memory,
+  transcripts, or logs;
+- agent processes or chat servers left running after a run ends.
 
 Report it privately through
 [GitHub's vulnerability reporting](https://github.com/Arth-Singh/Model-Collab/security/advisories/new),

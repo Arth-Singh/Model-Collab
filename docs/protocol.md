@@ -1,226 +1,209 @@
-# Protocol reference
+# How a run works
 
-Model Collab coordinates local agents through a project-local state store. Native
-sessions use MCP tools or CLI commands; both interfaces share the same protocol.
-See [design](design.md) for why the protocol works this way.
+`model-collab up` starts a run and supervises it in the foreground until it
+ends. This page describes each step, the agents' tools, and where everything is
+stored. See [design](design.md) for why it works this way.
 
-## Session lifecycle
+## Starting
 
-Starting a goal records a snapshot of the project, including uncommitted and
-untracked files, as a Git commit under `refs/model-collab/base`. Each peer gets a
-detached Git worktree of that snapshot at `.collab/work/<agent>`. Ignored
-directories named in the `dependencyDirs` setting (by default `node_modules`,
-`.venv`, and `venv`, at any depth) are linked into each worktree so tests can
-run. Other ignored files, including build output and caches such as
-`__pycache__`, are not linked, so one agent's build cannot overwrite another's.
-Linked directories are shared with your working tree; an agent that installs
-packages into one changes it for everyone.
+1. **Snapshot.** The project's working tree, including uncommitted and
+   untracked files, is recorded as a Git commit under `refs/model-collab/base`.
+   Your index and working tree are not touched.
+2. **Origin.** A bare repository, `.collab/run/origin.git`, starts with `main`
+   at that snapshot. It borrows your repository's objects through Git
+   alternates instead of copying them, so it stores only the swarm's commits.
+   It sets `receive.denyNonFastForwards` and `receive.denyDeletes`: nobody can
+   force-push or delete `main`.
+3. **Clones.** Each agent gets a clone at `.collab/run/work/<agent>`. Its Git
+   directory lives outside the workspace, at `.collab/run/git/<agent>`
+   (`git clone --separate-git-dir`), because Codex's sandbox makes any `.git`
+   inside a writable root read-only. Commits carry the agent's name. The clone
+   pulls with rebase, and your global Git hooks and commit signing are off.
+   Ignored directories named in `dependencyDirs` (by default `node_modules`,
+   `.venv`, and `venv`) are linked from your working tree and excluded from
+   commits. If you started from a subdirectory, each agent works in the same
+   subdirectory of its clone.
+4. **Chat.** A SwarmChat server starts on a free localhost port. Its data
+   folder, `.collab/chat`, keeps every chat across runs. Every agent, `user`
+   (you), and `model-collab` (the supervisor) get a chat account with a new
+   token for this run. All of them are members of `#general`. Messages from
+   earlier runs are marked read, so agents start with this goal.
+5. **Goal.** `user` posts the goal, success criteria, team, and deadline to
+   `#general`.
+6. **Agents.** Agents are named by backend and number: `claude-1`, `codex-1`,
+   `claude-2`, and so on, alternating. They start `staggerSeconds` apart in that
+   order.
 
-1. **Solve.** Each peer changes files in its own worktree and submits one
-   `proposal`. Status withholds other peers' messages and candidates until every
-   peer has proposed.
-2. **Cross-examine.** All candidates become visible and discussion rounds begin.
-   Each peer sends at most one message per round.
-3. **Finish.** The session converges when every participant's vote points at the
-   same current candidate, no challenge against it is open, and every configured
-   check has passed on it. The agreed candidate is then applied to the user's
-   working tree.
+## Agent sessions
 
-A proposal is its author's vote. With two peers, one `accept` of the other's
-candidate is enough to converge, so the shortest session is one proposal each
-and one acceptance.
+Each agent runs in a loop of sessions. A session is one headless process:
+`claude -p` or `codex exec`, in the agent's clone. Its prompt is the
+[swarm contract](../prompts/swarm.md) (plus the
+[research contract](../prompts/research.md) for the `research` preset), the
+facts of the run, the agent's summary from its previous session, and the shared
+context files `.collab/CONTEXT.md`, `.collab/RESEARCH.md`, and
+`.collab/MEMORY.md`.
 
-Terminal states are `converged`, `blocked`, `exhausted`, and `stopped`. A limit
-or blocker ends the conversation without declaring a winner. Starting another
-goal archives the previous conversation under `.collab/history/` and replaces
-the worktrees.
-
-## Candidates
-
-A `proposal` snapshots every file its author changed relative to the base:
-modified, added, and deleted files, including untracked files that are not
-ignored. Contents are copied to `.collab/candidates/<id>/files`, so a candidate
-never changes after it is proposed. Linked dependency directories and `.collab`
-are never captured. A proposal with no file changes must include a written
-`solution`.
-
-A new proposal supersedes its author's previous candidate and removes every vote
-for it. Other votes are kept.
-
-Review tools work on candidates, not worktrees:
-
-| Tool              | CLI        | Result                                                   |
-| ----------------- | ---------- | -------------------------------------------------------- |
-| `collab_diff`     | `diff`     | Unified diff of the candidate against the base           |
-| `collab_checkout` | `checkout` | A runnable copy at `.collab/review/<agent>/<id>`         |
-| `collab_verify`   | `verify`   | Runs a configured check in a fresh copy, then removes it |
-
-During the solve phase a peer can review only its own candidates.
-
-## Messages
+A session ends when the agent returns JSON:
 
 ```json
-{
-  "clientMessageId": "codex-proposal-001",
-  "contextVersion": 0,
-  "kind": "proposal",
-  "summary": "Expire an entry at its exact expiry timestamp.",
-  "evidence": ["test/cache.test.js: 7 cases from the spec pass, including now == expiresAt."],
-  "solution": "Use now >= expiresAt in get() and size(); size() prunes before counting."
-}
+{ "next": "continue", "summary": "Lexer pushed in 4f2a91c; next: error messages." }
 ```
 
-Allowed kinds are `proposal`, `challenge`, `evidence`, `accept`, and `blocked`.
-`candidate` names an existing candidate; `repliesTo` names a message; `resolves`
-lists challenges authored by this peer. Only proposals carry `solution`. Every
-message except `blocked` needs evidence. See the
-[JSON schema](../schemas/message.schema.json).
+- `continue` starts a fresh session right away.
+- `wait` puts the agent to sleep. Waiting makes no model calls. The agent is
+  woken by a message newer than the start of its last session that is one of
+  these:
+  - a direct message to it;
+  - a post in a channel other than `#general`;
+  - a post that @mentions its ID, or contains `@all`;
+  - a post from `user` or `model-collab`, such as your notes and failing
+    checks.
 
-An `accept` is rejected while a challenge against that candidate is open, unless
-the same message resolves the sender's own challenges, and until every
-configured check has passed on it. Only a challenge's author can resolve it.
+  A plain status post in `#general` wakes nobody, so agents @mention whoever
+  must act on it. Without this rule, every "done" post started a session in
+  every waiting agent only to read it. The supervisor waits with SwarmChat's
+  `wait --peek --where`, so the message stays unread for the agent.
 
-Use a fresh `clientMessageId` for each contribution. Reusing it with identical
-content is retry-safe; reusing it with different content is rejected. A message
-that repeats one of the sender's earlier messages is rejected.
+A session that reaches `sessionMinutes` is stopped, and the next session is
+told to check `git status` for unfinished work. A Codex session that prints
+nothing for 10 minutes while no command runs has lost its model stream; it is
+retried once with a note, then counts as failed.
+
+**Failures.** A session that fails waits before the next attempt: 10 seconds
+after an error, 60 seconds after a usage limit (`rate_limited`), doubling with
+each failure in a row up to 15 minutes. After 5 failures in a row the agent
+retires. An agent also retires after `maxSessions` sessions.
+
+**Sandboxes.** Codex runs with `--sandbox workspace-write`, ignores your Codex
+config and execpolicy rules, and has web search off. Claude Code has only its
+file tools and Bash, and runs every shell command in its OS sandbox. Both can
+write only their clone, their Git directory, and the origin, and neither has
+network access. Both get an allowlisted environment; see
+[configuration](configuration.md#the-agents-environment).
+
+## Agent tools
+
+Both sandboxes block localhost, so agents cannot reach the chat server
+themselves. Each agent's CLI starts `model-collab serve --agent <id>`, an MCP
+server that runs outside the sandbox and calls SwarmChat with that agent's
+token.
+
+| Tool           | Result                                                                                                                                           |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `chat_read`    | Unread messages across all chats, oldest first, then marked read. Narrow by chat, `last` N, search text, sender, or a whole thread.              |
+| `chat_send`    | Sends to `#general`, another channel, one agent (a direct message), or several agents separated by commas. `replyTo` keeps a thread together.    |
+| `chat_wait`    | Blocks up to 300 seconds until a new message arrives, then returns it.                                                                           |
+| `chat_chats`   | The agent's chats with unread counts and members.                                                                                                |
+| `chat_channel` | Creates a channel with members, joins a public channel, adds members, or lists public channels.                                                  |
+| `swarm_status` | The goal, the agent's workspace, time left, unread count, each teammate's state, recent commits on `main`, configured checks, and check results. |
+| `swarm_check`  | Runs one configured check on the current `main` in a clean checkout.                                                                             |
+
+Messages name their chat: `#general`, `#parser`, or the members of a direct
+chat such as `claude-1,codex-1`. A message holds up to 8,000 characters.
+
+## Ending
+
+The supervisor checks the run every second. A run ends in one of these
+statuses:
+
+| Status     | When                                                                                                               | Applied? |
+| ---------- | ------------------------------------------------------------------------------------------------------------------ | -------- |
+| `finished` | Every agent that has not retired has been waiting for `quietSeconds`, and every configured check passes on `main`. | Yes      |
+| `failed`   | Checks still fail after `maxCheckRounds` rounds, every agent retired, or the supervisor itself failed.             | No       |
+| `expired`  | The deadline passed.                                                                                               | No       |
+| `stopped`  | You ran `model-collab stop` or pressed Ctrl-C.                                                                     | No       |
+
+When the swarm goes quiet, each check runs without a shell in a fresh copy of
+`main` with dependency links, under `checkTimeoutSeconds`. If one fails,
+`model-collab` posts its name, exit status, and the end of its output to
+`#general`. That message wakes every waiting agent. With no checks configured,
+a quiet swarm finishes at once.
+
+At the end, sessions in progress are stopped, `model-collab` posts the outcome
+to `#general`, and the chat server stops last. The server runs in its own
+process group, so Ctrl-C reaches only the supervisor, which shuts down in this
+order.
+
+## The result
+
+The swarm's `main` is fetched into your repository as
+`refs/model-collab/result`, so its history stays available after the next run
+replaces `.collab/run`:
 
 ```sh
-model-collab status --agent codex
-# Use session.id from the state you prepared this contribution against.
-model-collab post --agent codex --session SESSION_ID --json @proposal.json
+git log refs/model-collab/result
+git diff HEAD refs/model-collab/result
 ```
 
-`--json -` reads the message from standard input. When using shell tools, pass
-message text through a quoted heredoc or a file instead of interpolating it into
-a command. The MCP equivalent includes `sessionId` alongside the message fields.
-
-## Board
-
-The project board keeps findings across goals in `.collab/board.jsonl`.
-`.collab/BOARD.md` is a generated view of it. A channel holds threads; a thread
-is its first post plus flat replies. Post IDs look like `p12`, and a thread's ID
-is its first post's ID.
-
-| Tool                       | CLI                               | Result                                                  |
-| -------------------------- | --------------------------------- | ------------------------------------------------------- |
-| `collab_board_post`        | `board post --channel`/`--thread` | Starts a thread in a channel, or replies to a thread    |
-| `collab_board_search`      | `board search [query]`            | Posts and replies, newest first                         |
-| `collab_board_threads`     | `board threads`                   | Threads by latest activity (or `--sort created`)        |
-| `collab_board_read_thread` | `board read ID`                   | A thread's first post and replies, oldest first         |
-| `collab_board_read_post`   | `board read ID`                   | A post's full text, sliced by Unicode character offsets |
-
-- **Destinations.** A post names exactly one of `channel` (creating it if
-  needed) or `thread`. Replies go to a thread's first post; there are no nested
-  replies. Channel names use 1–48 lowercase letters, digits, dots, dashes, or
-  underscores.
-- **Search.** Every whitespace-separated query term must appear in the post,
-  ignoring case. Filters for channel, author, and `after` (a post ID) combine.
-  There is no ranking; results are newest first.
-- **Pages.** Lists return up to 20 results by default and 50 at most, with
-  previews of 1,000 characters by default. A page stops early rather than exceed
-  20,000 characters; continue with `nextCursor`.
-- **Visibility.** While a goal is in its independent phase, a peer's posts from
-  that goal are hidden from the other peer, like its candidate, and so is every
-  reply in a thread such a post started. Other posts from earlier goals or by the
-  user are visible. `BOARD.md` omits every peer's sealed posts until they unseal.
-  The user sees everything through the CLI.
-- **Status.** `board` in status lists channels, the five most active threads,
-  and `newForYou`: up to ten posts by others in this goal since the viewer's
-  last discussion message, with 150-character previews.
-- **Limits.** A post holds up to 8,000 characters. Each peer may post twelve
-  times per goal; the user has no limit. Peers cannot post while the session is
-  paused. Posts are not protocol messages: they do not change the session,
-  count as votes, or wake a waiting peer.
-- **Retries.** An optional `requestId` makes a post retry-safe: repeating it
-  with the same content returns the original post, and with different content is
-  rejected. Posting the same text to the same place twice is rejected.
-
-The user posts as `user` with `model-collab board post`. Unlike a note, a board
-post does not clear votes or change `contextVersion`.
+A `finished` run applies the difference between the snapshot and the final
+`main` to your working tree. Applying is all or nothing. It first compares
+every affected path with the snapshot, including file contents, the executable
+bit, symlink targets, and parent directories. If you changed any of them during
+the run, nothing is written and the run records the conflict. If a write fails
+partway, the files already written are restored. Submodule changes are
+refused, and a result may change at most 500 files, 10 MiB per file, 50 MiB in
+total. `model-collab apply` applies the latest run's result whatever its status.
 
 ## Project memory
 
-`.collab/MEMORY.md` summarizes earlier goals in at most 10,000 bytes, under the
-headings User preferences, Project knowledge, Pitfalls, and Goal history. Workers
-receive it with the shared context; interactive agents are told to read it.
+`.collab/MEMORY.md` summarizes earlier runs in at most 10,000 bytes, under the
+headings User preferences, Project knowledge, Pitfalls, and Goal history. Every
+agent reads it with the shared context.
 
-When a goal ends, one model call without tools reads the current memory and the
-goal's record: its goal and success criteria, outcome and applied change, user
-notes, messages with evidence, checks, and the board posts made during it. It
-returns the complete new memory, or the same memory when nothing durable was
+After a run, `up` makes one model call without tools (Claude Code at low
+effort, or Codex if the swarm had no Claude agent). The call reads the current
+memory and the run's record: goal and criteria, status and reason, commits and
+what was applied, the team with session counts and retirements, your notes,
+check results, each agent's last summary, and every chat message of the run.
+It returns the complete new memory, or the same memory when nothing durable was
 learned. The tool then:
 
 1. redacts common secret formats,
 2. rejects output that lacks the headings in order or exceeds the size limit,
-3. keeps the file unchanged if the user edited it during the call, leaving the
-   goal to the next update, and
-4. records the goal in `.collab/memory.json` so it is remembered only once. An
-   update interrupted between writing `MEMORY.md` and recording the goal is
-   completed on the next run; one interrupted earlier is retried.
+3. keeps the file unchanged if you edited it during the call, leaving the run to
+   the next update, and
+4. records the run in `.collab/memory.json` so it is remembered only once.
 
-If the user edited `MEMORY.md` since the last update, the call receives a diff of
-those edits and must keep them. An update handles at most three goals; older
-unremembered goals are marked skipped, and the update reports how many.
-`memory clear` starts over: it deletes `MEMORY.md` and marks every finished goal
-so far as handled, so none is folded into the new memory.
+If you edited `MEMORY.md` since the last update, the call receives a diff of
+your edits and must keep them. An update handles at most three runs; older
+ones are marked skipped. Records from the earlier two-agent protocol are left
+out. A failed update is reported and never fails the run.
 
-`up --ui workers` updates memory when the session ends. Other sessions are
-remembered by the next `up`, before the new goal starts, or by
-`model-collab memory update`. A failed update is reported and never blocks a
-goal.
+## Storage
 
-## Checks and applying
+| Path                               | Contents                                                                   |
+| ---------------------------------- | -------------------------------------------------------------------------- |
+| `.collab/state.json`               | Settings and the latest run. Written under a lock with atomic replacement. |
+| `.collab/README.md`                | A generated summary of the latest run.                                     |
+| `.collab/CONTEXT.md`               | Your shared context for every agent.                                       |
+| `.collab/MEMORY.md`, `memory.json` | Project memory and its bookkeeping.                                        |
+| `.collab/chat/`                    | SwarmChat's data: plain JSONL logs per chat, users, and read positions.    |
+| `.collab/run/origin.git`           | The shared origin.                                                         |
+| `.collab/run/work/`, `run/git/`    | Each agent's clone and its Git directory.                                  |
+| `.collab/run/logs/<agent>/`        | Each session's process output, including token usage.                      |
+| `.collab/run/tokens.json`          | This run's chat tokens, readable only by you.                              |
+| `.collab/run/result/`              | The files of the result while it is applied.                               |
+| `.collab/history/<run>.json`       | The record of an earlier run.                                              |
+| `.collab/history/<run>/`           | Its origin and session logs. Clones and tokens are deleted when archived.  |
 
-Checks are user-configured argument arrays. Each run uses a fresh copy of the
-base plus the candidate's changes, without a shell, with the project's check
-timeout (300 seconds by default). A check cannot alter the candidate it verifies.
-Passing checks cover only what their commands test.
+A run is archived when the next one starts.
 
-On convergence the tool writes the candidate's changes into the user's working
-tree. It first compares every affected path with the base, including file
-contents, the executable bit, symlink targets, and parent directories. If the
-user changed any of them in the meantime, nothing is written and the session
-records the conflict; resolve it and run `model-collab apply`. Applying is all
-or nothing: if a write fails partway, the files already written are restored
-and the working tree is left as it was. Every attempt is recorded in the
-session's `applyLog`. After a session ends, `apply --candidate mN` applies any
-candidate, for example one of two unresolved alternatives.
+The supervisor records the process ID of each running session. If the
+supervisor died during a run, for example because its terminal was killed, the
+next `up` or `stop` stops the orphaned agent CLIs and the stale chat server.
+It stops an agent's whole process group, and only while that process ID still
+belongs to `claude` or `codex`. The run is then marked `failed` (or `stopped`,
+for `stop`) and archived when the next run starts.
 
-## Waiting and human intervention
+## Trust boundary
 
-`await-turn` waits locally until a peer has an actionable update or the session
-pauses or ends. It can wait for up to five minutes without a model call.
-`wait` is the shorter revision-based primitive used by MCP clients.
-
-Pause rejects new protocol actions. It cannot interrupt a native edit already in
-progress. A shared note clears votes and checks made against earlier
-instructions; peers must acknowledge the new `contextVersion`. Resume extends
-the deadline by the time spent paused.
-
-## Storage and integration
-
-`.collab/state.json` is canonical for the session; `.collab/board.jsonl` for
-the board. Updates use an interprocess lock and atomic
-replacement. `.collab/README.md` and `.collab/messages.jsonl` are generated views;
-`refresh` rebuilds them after an interrupted write. Sessions from the earlier
-shared-tree protocol are stopped when this version first reads them.
-
-```sh
-model-collab serve --agent codex
-model-collab config --agent codex
-```
-
-`serve` runs the stdio MCP server with a fixed peer identity. `config` prints its
-connection configuration without changing global client settings. Native
-`launch` supplies this configuration automatically.
-
-The MCP tools are `collab_status`, `collab_start`, `collab_post`, `collab_wait`,
-`collab_diff`, `collab_checkout`, `collab_verify`, `collab_stop`, and the five
-`collab_board_*` tools. Worker connections expose status, review, verification,
-and board tools; the worker posts each turn's message itself.
-
-This is a coordination protocol for a trusted local project. An identity bound
-to an MCP connection is not an authentication boundary against processes that can
-edit the state file, and worktree isolation is a working arrangement, not a
-security boundary. The user remains responsible for the repository and the
-commands configured as checks.
+This is a coordination tool for a trusted local project. Agents can read most
+files on your machine, including `.collab/run/tokens.json` and SwarmChat's
+data folder, whose own documentation notes that any process running as your
+user can read it. They cannot use a token, because their sandboxes block
+localhost; only the MCP server, which fixes each agent's identity, reaches the
+chat. Sandboxing belongs to Codex and Claude Code, and the clones are a working
+arrangement, not a security boundary. You remain responsible for the
+repository, the commands configured as checks, and any environment variable
+you pass to agents.

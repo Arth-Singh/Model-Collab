@@ -2,56 +2,68 @@
 
 [![Tests](https://github.com/Arth-Singh/Model-Collab/actions/workflows/test.yml/badge.svg)](https://github.com/Arth-Singh/Model-Collab/actions/workflows/test.yml)
 
-Codex and Claude Code solve the same problem independently, test each other's
-work, and hand you one agreed change.
+A swarm of headless Claude Code and Codex agents works on one goal in your
+repository. They divide the work among themselves over a shared chat and
+integrate it on one Git branch. You get one result, applied to your working
+tree.
 
 ```sh
 cd your-project
-model-collab up "Find why the cache returns expired entries and fix it"
+model-collab up "Add a CSV export to the report command, with tests"
 ```
 
-- **Independent first.** Each agent works in its own Git worktree. Neither sees
-  the other's answer until both have proposed one.
-- **Cross-examined by running code.** Each agent runs its tests against the
-  other's candidate in a clean checkout. The agents compare what the code does,
-  not what they say about it.
-- **No ping-pong.** Proposing counts as a vote. One acceptance ends the session,
-  so the shortest run is one proposal each and one verdict.
-- **Findings carry over.** A shared board keeps reproductions, dead ends, and
-  decisions across goals, and after each goal a project memory condenses what
-  was learned. Both are modeled on Codex's message board and memories (see
-  [Design](docs/design.md)). Agents read them before they start and verify
-  before they trust them.
-- **Your tree stays yours.** The agreed change is applied only when the agents
-  converge, and never over files you edited in the meantime.
+- **No roles.** Nobody is assigned a part and nobody leads. Agents claim pieces
+  of the goal in `#general`, build them in their own clones, and push to a
+  shared `main`. If two claims collide, the earlier message keeps the piece.
+- **A real chat.** Agents talk over a local
+  [SwarmChat](https://github.com/Pranjal2041/swarmchat) server: channels,
+  direct messages, and threads. Watch every message live in your browser with
+  `model-collab view`.
+- **Git as the integration point.** A bare origin starts at a snapshot of your
+  project. Agents pull, test, and push small commits. The origin refuses force
+  pushes and deleted branches.
+- **Fresh sessions.** Each agent runs in a loop of short sessions, so its
+  context never grows without bound. An agent with nothing to do waits without
+  spending tokens until a direct message, an @mention, or a post from you or the
+  supervisor wakes it.
+- **A clear end.** The run finishes when every agent is waiting and your
+  configured checks pass on `main`. Failing checks are posted to the chat and
+  wake the swarm. The result is then applied to your working tree, never over
+  files you changed in the meantime.
+- **Contained agents.** Agents run in each CLI's sandbox with no network and no
+  web tools. API keys and tokens in your shell never reach them.
 
 ```text
-round 0  codex  ──► own worktree ──► proposal m1 ┐  sealed: neither sees the other
-         claude ──► own worktree ──► proposal m2 ┘
-round 1  each runs its tests against the other's candidate
-         claude: accept m1  ──►  converged, m1 applied to your working tree
+user      ──► #general: Goal (run 3f9a...)
+claude-1  ──► #general: I take the CSV writer: src/export/csv.js
+codex-1   ──► #general: I take the CLI flag and its tests: src/cli.js, test/cli.test.js
+claude-2  ──► #general: Shared tests: npm test. 42 passing on main.
+...           each pushes to main, posts the commit and the test result, then waits
+model-collab: every agent waiting, checks pass → result applied to your working tree
 ```
 
-The protocol follows research on how groups of people and models go wrong:
-conformity, correlated errors, and unshared information. [Design](docs/design.md)
-explains each rule and its source.
+The rules come from what is known about swarms of coding agents and from
+research on how groups go wrong. [Design](docs/design.md) explains each rule
+and its source.
 
 ## Install
 
-You need Node.js 22.12 or later, Git, tmux, and the `codex` and `claude`
-commands, signed in. macOS and Linux are supported, including iTerm2. On Linux,
-unattended workers also need `bubblewrap` and `socat` for Claude Code's
-sandbox. This version was tested with Codex CLI 0.155.1 and Claude Code
-2.1.283; `model-collab doctor` reports an older CLI that lacks a flag the
-workers use.
+You need Node.js 22.12 or later, Git, SwarmChat 0.1.0, and the `codex` and
+`claude` commands, signed in. macOS and Linux are supported. On Linux, Claude
+Code's sandbox also needs `bubblewrap` and `socat`. This version was tested
+with Codex CLI 0.165.0 and Claude Code 2.1.314.
 
 ```sh
+uv tool install swarmchat==0.1.0      # or: pipx install swarmchat==0.1.0
 git clone https://github.com/Arth-Singh/Model-Collab.git
 cd Model-Collab
 npm ci
 npm link
 model-collab doctor
 ```
+
+`doctor` checks Node.js, Git, SwarmChat, both CLIs and the flags the agents
+need, and that you are in a Git repository. It does not start a model.
 
 The package is installed from GitHub, not npm. Keep this checkout while using
 `npm link`; to update, run `git pull` and `npm ci` here.
@@ -61,115 +73,80 @@ The package is installed from GitHub, not npm. Keep this checkout while using
 From the Git repository you want to work on:
 
 ```sh
-model-collab up "Find the cause of our failing integration test"
+model-collab up "Find why the cache returns expired entries and fix it" \
+  --checks '{"test":["npm","test"]}'
 ```
 
-Codex and Claude open side by side in tmux, each in its own worktree under
-`.collab/work/`. You watch every edit and command and can interrupt either agent.
-A control window lets you pause, add a shared instruction, or stop.
+`up` stays in the foreground and prints one line per event: sessions starting
+and ending, commits on `main`, and posts in `#general`. Ctrl-C stops the run.
+From another shell in the same project:
 
-| Action                               | Shortcut           |
-| ------------------------------------ | ------------------ |
-| Switch between agents                | `Ctrl-b`, then `o` |
-| Open the control window              | `Ctrl-b`, then `n` |
-| Detach and leave the session running | `Ctrl-b`, then `d` |
+| Command                            | What it does                                                 |
+| ---------------------------------- | ------------------------------------------------------------ |
+| `model-collab view`                | Opens every chat in your browser, live                       |
+| `model-collab status`              | Shows each agent's state, sessions, tokens, and last summary |
+| `model-collab note "..."`          | Posts your instruction to `#general` and wakes every agent   |
+| `model-collab stop`                | Ends the run; nothing is applied                             |
+| `model-collab apply`               | Applies the latest run's result, for example after `stop`    |
+| `model-collab transcript`          | Prints every chat message of the latest run                  |
+| `git log refs/model-collab/result` | Shows the swarm's commits after a run ends                   |
 
-These use tmux's default prefix, `Ctrl-b`; if you changed it, use yours.
+When a run finishes, review the change with `git diff`, as you would a
+colleague's patch. Configure checks: without them, a run finishes as soon as
+every agent is waiting.
 
-Return later with `model-collab attach`. To run without panes and print the
-conversation instead:
-
-```sh
-model-collab up "Review the retry policy and fix what is wrong" --ui workers
-```
-
-When the agents agree, the change is written to your working tree. Review it
-with `git diff`, as you would a colleague's patch.
-
-```text
-Collaboration converged: unanimous_acceptance
-codex: 2 model calls
-claude: 2 model calls
-Agreed on m1 and applied it to your working tree: src/cache.js, test/cache.test.js.
-```
-
-If they do not agree before the limits, nothing is applied. The transcript in
-`.collab/README.md` keeps both alternatives and the evidence for each. To take
-one anyway, run `model-collab apply --candidate m2`.
-
-## Steer the work
-
-In the control window, type `pause`, `note <instruction>`, `resume`, or `stop`.
-From another shell in the project:
-
-```sh
-model-collab note "Keep the public API unchanged"
-model-collab status --human
-```
-
-A note reaches both agents and clears votes made before it. For standing
-knowledge that should outlive this goal, post to the board instead:
-
-```sh
-model-collab board post --channel decisions "Never change the public parse() signature"
-model-collab board search parse
-```
-
-Give both agents background by editing `.collab/CONTEXT.md` after
-`model-collab init`. They also follow your repository's `AGENTS.md` or
+Give every agent background by editing `.collab/CONTEXT.md` after
+`model-collab init`. Agents also follow your repository's `AGENTS.md` or
 `CLAUDE.md`.
 
-For research questions, `model-collab init --preset research` adds a brief for
-your question, sources, assumptions, and experiment budget.
+## Size, models, and limits
 
-## Models, limits, and checks
+| Setting                | Default                          | Flag                              |
+| ---------------------- | -------------------------------- | --------------------------------- |
+| Agents                 | 9 Claude Code + 9 Codex          | `--agents`, `--claude`, `--codex` |
+| Models                 | `claude-opus-5-5`, `gpt-6-astra` | `--claude-model`, `--codex-model` |
+| Reasoning effort       | `high`                           | `--effort`                        |
+| Run deadline           | 60 minutes                       | `--minutes`                       |
+| One session            | 30 minutes                       | `--session-minutes`               |
+| Sessions per agent     | 40                               | `--max-sessions`                  |
+| Quiet period to finish | 30 seconds                       | `--quiet-seconds`                 |
 
-Defaults are `gpt-6-astra` for Codex and `claude-opus-5-5` for Claude Code, both
-at `high` effort:
-
-```sh
-model-collab up "Review this change" \
-  --codex-model YOUR_CODEX_MODEL --claude-model YOUR_CLAUDE_MODEL --effort xhigh
-```
-
-A session allows three rounds after the proposals and 30 minutes. To require a
-project check before any acceptance, pass it as an argument array. It runs in a
-clean checkout of each candidate:
-
-```sh
-model-collab up "Fix the failing tests" --checks '{"test":["python","-m","pytest","-q"]}'
-```
-
-See [configuration](docs/configuration.md) for all settings.
+Flags on `up` apply to that run. Save them for later runs with
+`model-collab configure`. Eighteen agents is a lot for a small change: for a
+single bug, try `--agents 2` or `--agents 4`. Every agent uses your own CLI
+sign-in, so a large swarm reaches subscription usage limits sooner. See
+[configuration](docs/configuration.md) for every setting.
 
 ## Does it help?
 
-On [20 hard programming exercises](docs/evaluation.md), graded by hidden tests
-over three trials:
+The swarm has not been evaluated yet. A smoke test, not an evaluation: one
+Claude Code agent (`claude-haiku-5-5`, low effort) and one Codex agent finished
+a toy `slugify` task in about two minutes, with 4 sessions and 551k tokens, and
+the result was applied. Treat the swarm as an experiment and measure it on
+your own work.
 
-| Setup                          | Pass rate | Claude cost per task | Minutes per task |
-| ------------------------------ | --------- | -------------------- | ---------------- |
-| Codex alone                    | 62%       | —                    | 1.3              |
-| Claude Code alone              | 92%       | $0.23                | 0.6              |
-| Codex and Claude Code together | 85%       | $0.76                | 3.8              |
+What is known so far comes from others. On
+[ProgramBench](https://github.com/Pranjal2041/swarmchat), the SwarmChat
+authors found that a team of eight reached a single agent's score three to
+seven times sooner, and that one agent given enough time roughly caught up. A
+team mainly buys wall-clock speed, not a higher ceiling. Their parallel
+efficiency λ was 0.43 to 0.86, so extra agents add less than their share. The
+[design notes](docs/design.md) cover where swarms fail: sequential tasks,
+tasks without a good test suite, and many agents hitting the same bug.
 
-The pair fixes most of Codex's mistakes but does not beat Claude Code alone, at
-about three times the cost. On 21 held-out exercises it broke nothing either
-agent solved alone. Where it lost, the agents disagreed on something no test
-could settle and picked the wrong reading. Earlier pilots on an
-[RL programming task](docs/findings.md) and
-[ResearchCodeBench](docs/research-code.md) found no advantage over a strong solo
-agent either. Use it when an independent second check is worth the cost, and
-measure it on your own problems.
+The earlier version of Model Collab ran one Codex and one Claude Code agent as
+a cross-examining pair. On [20 hard programming exercises](docs/evaluation.md)
+the pair passed 85%, Claude Code alone passed 92%, at about three times the
+cost. That evaluation measures the pair, not the swarm.
 
 ## Documentation
 
-- [Design](docs/design.md): the research behind each protocol rule
-- [Evaluation](docs/evaluation.md): the pair against each agent alone, with the harness
-- [Usage](docs/usage.md): existing panes, project context, and unattended sessions
-- [Configuration](docs/configuration.md): models, limits, checks, and CLI options
-- [Protocol](docs/protocol.md): worktrees, candidates, messages, the board, memory, and applying
-- [Troubleshooting](docs/troubleshooting.md): setup, stalled agents, and conflicts
+- [Design](docs/design.md): the research behind each swarm rule
+- [How a run works](docs/protocol.md): origin, clones, chat, sessions, ending, and storage
+- [Usage](docs/usage.md): running, watching, steering, and applying
+- [Configuration](docs/configuration.md): every setting, checks, and the agents' environment
+- [Troubleshooting](docs/troubleshooting.md): setup, usage limits, stuck runs, and conflicts
+- [Evaluation](docs/evaluation.md): the earlier pair against each agent alone
 - [Contributing](CONTRIBUTING.md): development setup and tests
 
 [MIT license](LICENSE).

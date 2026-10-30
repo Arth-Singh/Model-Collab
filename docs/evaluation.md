@@ -1,5 +1,7 @@
 # Evaluation
 
+> This page measures the earlier two-agent pair protocol (0.4.x and before), not the swarm that replaced it in 0.5.0.
+
 Does a pair do better than one agent? We measured it on programming exercises
 graded by tests the agents never see.
 

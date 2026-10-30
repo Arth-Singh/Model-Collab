@@ -1,59 +1,136 @@
 # Usage
 
 Run commands from the Git repository you want to work on, or pass
-`--repo /path/to/project`. Each project has its own goal, conversation, and
-terminal session.
+`--repo /path/to/project`. Each project has its own settings, chat, and runs.
 
-## Start and return to a session
-
-```sh
-model-collab up "Fix the stale cache entries"
-```
-
-`up` initializes a new project, snapshots it, gives each agent its own worktree
-under `.collab/work/`, and opens both native agent interfaces in those worktrees. In an ordinary interactive shell it attaches automatically. With
-`--detach`, or when run through an agent's shell tool, it prints instructions for
-attaching from your terminal.
+## Start a run
 
 ```sh
-model-collab attach
+model-collab up "Add retries to the HTTP client, with tests" \
+  --checks '{"test":["npm","test"]}'
 ```
 
-Repeating `up` with the same active goal reuses the session. A different active
-goal must be stopped first:
+`up` creates `.collab/` with default settings the first time, snapshots the
+project, gives each agent a clone of a shared origin, starts the chat, posts
+your goal to `#general`, and starts the agents a few seconds apart. It stays in
+the foreground until the run ends and prints one line per event:
+
+```text
+14:02:11 Run 3f9a... started with 18 agents.
+14:02:11 claude-1 starts session 1
+14:03:40 #general claude-1: I take the retry policy: src/http/retry.js
+14:09:02 main 4f2a91c1 claude-1: Add exponential backoff with jitter
+14:09:30 claude-1 → wait (439s, 812k tokens): Retry policy pushed; tests pass.
+```
+
+The goal can also come from a file (`@goal.md`) or standard input (`-`). Add
+success criteria with `--criteria "Retries stop after 5 attempts" "..."`.
+
+Flags on `up` apply to this run only; see [configuration](configuration.md) to
+save them. Choose the swarm's size for the task: a small fix needs two to four
+agents, not eighteen.
 
 ```sh
-model-collab stop
-model-collab up "Review the retry policy"
+model-collab up "Fix the flaky date test" --agents 2 --minutes 20
 ```
 
-Completed conversations are retained under `.collab/history/` when the next goal
-starts, and the worktrees are replaced. Detaching from tmux leaves the current
-session running. `stop` ends the collaboration protocol; the native interfaces
-and worktrees remain available for inspection.
+Keep the computer awake during a run. On macOS, run
+`caffeinate -i model-collab up ...` and keep the lid open.
 
-## The board
-
-Agents post findings to a project board that outlives each goal: how to run the
-tests, a requirement they found in the code, a dead end and why it failed, a
-decision and its reason. At the start of a goal they search it. Read it with:
+## Watch
 
 ```sh
-model-collab board threads
-model-collab board search "timeout retry"
-model-collab board read p12
+model-collab view
 ```
 
-Post as yourself with `model-collab board post --channel decisions "..."`, or
-reply to a thread with `--thread p12`. `.collab/BOARD.md` shows the whole board.
-To start fresh, delete `.collab/board.jsonl` between goals.
+opens SwarmChat's viewer in your browser: every channel and direct message,
+threads, a board view of a channel, a map of who talks to whom, and the chat as
+any one agent sees it. `--no-open` prints the address instead. The viewer only
+reads; it moves no one's read position.
+
+From another shell:
+
+```sh
+model-collab status        # each agent's state, sessions, tokens, last summary
+model-collab status --json # the full state, for tools
+model-collab transcript    # every message of the latest run, oldest first
+```
+
+Agent states are `starting`, `working` (in a session), `waiting` (asleep until
+a message reaches it), `backoff` (after a failed session), `retired`, and
+`stopped`.
+
+## Steer
+
+```sh
+model-collab note "Keep the public API of client.get unchanged"
+```
+
+posts your instruction to `#general` as `user`. Any post from you wakes every
+waiting agent, unlike an agent's plain post in `#general`. A note can also come
+from a file (`@note.md`) or standard input (`-`).
+
+```sh
+model-collab stop "Wrong approach; I will restate the goal"
+```
+
+asks the supervisor to end the run within a few seconds. Sessions in progress
+are stopped and nothing is applied. Ctrl-C in the terminal running `up` does
+the same; a second Ctrl-C quits at once.
+
+## Review and apply the result
+
+A run that finishes applies its result to your working tree. Review it with
+`git diff` and commit it yourself. The swarm's own commits are in
+`refs/model-collab/result`:
+
+```sh
+git log --oneline HEAD..refs/model-collab/result
+```
+
+If you edited any of the same files during the run, nothing is written and
+`model-collab status` names them. Commit, stash, or restore your edits, then
+run:
+
+```sh
+model-collab apply
+```
+
+`apply` also takes the result of a run that expired, was stopped, or failed,
+for example when its checks failed for a reason you accept. Look at it first:
+
+```sh
+git diff HEAD refs/model-collab/result
+model-collab apply
+```
+
+## Shared context
+
+```sh
+model-collab init
+```
+
+creates `.collab/` without starting a run and adds `.collab/` to your
+`.gitignore`. Edit `.collab/CONTEXT.md` with the architecture, constraints,
+relevant paths, and commands every agent should know. Agents also follow the
+repository's `AGENTS.md` or `CLAUDE.md`.
+
+For research work, use the `research` preset. Agents then also follow the
+research contract: state claims precisely, check sources, separate observation
+from interpretation, and plan bounded experiments. `init --preset research`
+also creates `.collab/RESEARCH.md`; fill in the question, sources, findings so
+far, and the experiment budget, and every agent reads it.
+
+```sh
+model-collab init --preset research
+```
 
 ## Project memory
 
-When a goal ends, Model Collab condenses it into `.collab/MEMORY.md`: what you
+When a run ends, Model Collab condenses it into `.collab/MEMORY.md`: what you
 asked for and corrected, how to build and test, traps, and what was decided.
-Both agents read it before the next goal. It is short by design and grounded in
-the goal record, and the agents are told to verify it rather than trust it.
+Every agent reads it in later runs, and is told to verify it rather than trust
+it.
 
 ```sh
 model-collab memory show
@@ -62,153 +139,3 @@ model-collab memory show
 Edit the file to correct it; your edits survive later updates. See
 [configuration](configuration.md#project-memory) to update, clear, or turn it
 off.
-
-## Review and apply the result
-
-When the agents converge, the agreed candidate is written to your working tree.
-Review it with `git diff` and commit it yourself. If you edited any of the same
-files after the session started, nothing is written; the transcript says which
-files conflict. Restore or commit your edits, then run:
-
-```sh
-model-collab apply
-```
-
-When a session ends without agreement, both alternatives stay available. Inspect
-them and apply the one you prefer:
-
-```sh
-model-collab diff --agent codex --candidate m2
-model-collab apply --candidate m2
-```
-
-## Prepare shared context
-
-Use `init` when you want to supply context before either agent starts:
-
-```sh
-model-collab init
-```
-
-Edit `.collab/CONTEXT.md` with the relevant architecture, constraints, file paths,
-and commands. The agents also follow the repository's normal instructions.
-Initialization preserves existing `AGENTS.md`, `CLAUDE.md`, and user-written
-context, and adds `.collab/` to `.gitignore`.
-
-For research work:
-
-```sh
-model-collab init --preset research
-```
-
-Fill in `.collab/RESEARCH.md` with the question, sources, current findings, and
-available compute or time. The research instructions ask the agents to check
-sources, distinguish assumptions from observations, and propose testable next
-steps. State any experiment budget before starting work.
-
-```sh
-model-collab up "Check our rollout bootstrapping and recommend a fix"
-```
-
-You can also create a research project directly with `up --preset research`.
-
-## Use agents you already have open
-
-Initialize and start a goal without opening another pair of agents:
-
-```sh
-model-collab init
-model-collab start "Find why the cache returns expired entries"
-```
-
-Paste this into your existing Claude Code session, using the real project path:
-
-```text
-Read /path/to/project/.collab/START-CLAUDE.md and follow it here. Work on the active shared goal in this session.
-```
-
-Paste this into Codex:
-
-```text
-Read /path/to/project/.collab/START-CODEX.md and follow it here. Work on the active shared goal in this session.
-```
-
-The generated instructions use each agent's shell tools to exchange messages.
-No MCP reconfiguration is required for this workflow. `status` names each
-agent's worktree; the instructions tell the agent to make its changes there, not
-in the directory it was opened in. The agents wait locally
-between turns; after five minutes without an actionable update, they may return
-to their prompts. Say "continue collaboration" to restart an idle agent.
-
-To launch a fresh native interface in a pane you opened yourself:
-
-```sh
-model-collab launch --agent claude
-# In your other pane:
-model-collab launch --agent codex
-```
-
-## Intervene
-
-Use the control window (`Ctrl-b`, then `n`) or a separate shell:
-
-```sh
-model-collab pause
-model-collab note "Keep the public API unchanged"
-model-collab resume
-```
-
-A shared note reaches both peers and invalidates decisions made against earlier
-instructions. Pause rejects new messages and verification results, but it cannot
-interrupt a native edit already in progress. Interrupt that agent in its own
-pane before making conflicting changes.
-
-Resuming restores the remaining conversation time. An idle native agent may need
-the instruction "continue collaboration". `up --resume` also resumes a paused
-session when given its existing goal.
-
-## Inspect or export the conversation
-
-```sh
-model-collab status --human
-model-collab export --format markdown > discussion.md
-model-collab export --format jsonl > discussion.jsonl
-```
-
-`.collab/README.md` is the readable transcript. The JSONL export is useful for
-custom tooling. Both are generated from saved state; use commands to contribute
-instead of editing generated history.
-
-## Unattended sessions
-
-```sh
-model-collab up "Review the error handling in this module" --ui workers
-```
-
-Workers print contributions to the current terminal and start a CLI turn only
-when a peer can contribute. They wait locally between turns and stop on agreement,
-a limit, a blocker, or a transport error. When one agent's acceptance ends the
-session, the other agent's turn in progress is cancelled. Ctrl-C cancels the
-worker processes.
-
-Each model turn may take up to 15 minutes by default; change this with
-`--turn-timeout SECONDS`. If the protocol rejects a message, for example an
-acceptance while a challenge is still open, the worker asks that agent for one
-corrected message before giving up. If a Codex turn prints nothing for 10
-minutes while no command is running, its model stream has stalled; the worker
-stops it and retries the turn once, keeping its edits. A note you add during a
-turn discards that turn's output and the agent starts again with your note.
-
-Workers run noninteractively inside each client's sandbox, in the agent's
-worktree. Codex uses `workspace-write` and ignores your Codex `config.toml` and
-execpolicy `.rules`, so a rule that lets `curl` or `git push` skip the sandbox in
-your own sessions does not apply to a worker. Claude Code runs shell commands in its OS
-sandbox, which limits writes to the worktree and temporary directories and blocks
-network access. A Claude Code worker has only its file tools and Bash, so allow
-rules in your Claude settings, such as one for `WebFetch`, do not apply. Neither
-agent can search or fetch from the web in worker mode. Both
-agents can edit files and run local tests; commands that need the network or
-paths outside the worktree will fail. Workers point Go's build cache at
-`.gocache` inside each worktree; other toolchains that write caches under your
-home directory may need a similar setting. Use native panes when you want to
-approve or direct the agents' individual tool calls.

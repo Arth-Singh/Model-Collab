@@ -1,78 +1,73 @@
 # Configuration
 
-## Models
+Settings live in `.collab/state.json` and apply to every later run. Three
+commands take the same setting flags:
 
-| Client      | Default model     | Default effort |
-| ----------- | ----------------- | -------------- |
-| Codex       | `gpt-6-astra`     | `high`         |
-| Claude Code | `claude-opus-5-5` | `high`         |
+| Command     | Effect                                                                     |
+| ----------- | -------------------------------------------------------------------------- |
+| `init`      | Creates `.collab/` with these settings. Fails if it already exists.        |
+| `configure` | Changes saved settings. Without flags, prints them. Rejected during a run. |
+| `up`        | Uses saved settings, with any flags given applying to this run only.       |
 
-Use model IDs and effort levels supported by your installed clients and account.
-Both agents use their existing CLI authentication.
+`up` creates `.collab/` with defaults if `init` was never run. `configure
+--json` and `init --json` print the complete settings as JSON. The format is
+described in [`schemas/config.schema.json`](../schemas/config.schema.json).
 
-```sh
-model-collab up "Review the parser" \
-  --codex-model YOUR_CODEX_MODEL \
-  --claude-model YOUR_CLAUDE_MODEL \
-  --effort high
-```
+## Settings
 
-For `launch` and `worker`, use `--model` to select that agent's model. Native
-launches preserve normal client permissions and add project-local collaboration
-tools. Overrides apply to newly launched processes; repeating `up` on a live
-session reuses its existing agents.
+| Setting               | Flag                          | Default                         | Range or form                      |
+| --------------------- | ----------------------------- | ------------------------------- | ---------------------------------- |
+| `claude`              | `--claude N`                  | 9                               | 0–32 Claude Code agents            |
+| `codex`               | `--codex N`                   | 9                               | 0–32 Codex agents                  |
+| (both)                | `--agents N`                  |                                 | Claude Code gets the odd one       |
+| `models.claude`       | `--claude-model ID`           | `claude-opus-5-5`               | Any model your Claude Code accepts |
+| `models.codex`        | `--codex-model ID`            | `gpt-6-astra`                   | Any model your Codex accepts       |
+| `effort`              | `--effort LEVEL`              | `high`                          | Passed to both CLIs                |
+| `deadlineMinutes`     | `--minutes N`                 | 60                              | 0.1–1440                           |
+| `sessionMinutes`      | `--session-minutes N`         | 30                              | 0.1–240                            |
+| `maxSessions`         | `--max-sessions N`            | 40                              | 1–500 sessions per agent           |
+| `quietSeconds`        | `--quiet-seconds N`           | 30                              | 1–3600                             |
+| `staggerSeconds`      | `--stagger-seconds N`         | 3                               | 0–120                              |
+| `checks`              | `--checks JSON`               | none                            | See [checks](#checks)              |
+| `checkTimeoutSeconds` | `--check-timeout N`           | 300                             | 1–3600                             |
+| `maxCheckRounds`      | `--max-check-rounds N`        | 3                               | 1–10                               |
+| `dependencyDirs`      | `--dependency-dirs A,B`       | `node_modules`, `.venv`, `venv` | Up to 20 folder names              |
+| `passEnv`             | `--pass-env A,B`              | none                            | Up to 50 variable names            |
+| `preset`              | `--preset NAME`               | `coding`                        | `coding` or `research`             |
+| `memory`              | see [memory](#project-memory) | on                              | on or off                          |
+| `chatCommand`         | (edit `state.json`)           | `swarmchat`                     | Command name or path               |
 
-## Presets and limits
+A swarm needs at least one agent. Agents are named `claude-1`, `codex-1`,
+`claude-2`, and so on, and start `staggerSeconds` apart in that order.
 
-`coding` is the default for new projects. `research` adds source-checking and
-experiment-planning instructions, plus `.collab/RESEARCH.md`.
-
-| Setting           | Default    |
-| ----------------- | ---------- |
-| Preset            | coding     |
-| Discussion rounds | 3          |
-| Contributions     | 24         |
-| Conversation time | 30 minutes |
-| Check timeout     | 300 s      |
-| Worker turn limit | 900 s      |
-
-The independent proposal phase precedes discussion rounds. Each peer gets one
-contribution per round. With two agents, one acceptance of the other's proposal
-ends the session, so most agreeable sessions finish in the first discussion
-round. The first limit reached ends the conversation without
-inventing agreement. Native interfaces remain open; protocol limits do not kill
-an agent that is already working.
-
-Set limits when initializing the project:
-
-```sh
-model-collab up "Investigate the memory leak" \
-  --minutes 45 --max-rounds 6 --max-messages 20
-```
-
-Existing projects retain their saved configuration. Passing new limits to `up`
-does not replace it. To change limits, preset, or checks, stop the current session
-and use `configure`:
+- **`deadlineMinutes`** ends the whole run. Sessions in progress are stopped and
+  nothing is applied; `model-collab apply` can still take the result.
+- **`sessionMinutes`** limits one agent session. The next session is told to
+  check for unfinished work.
+- **`maxSessions`** retires an agent after that many sessions in one run.
+- **`quietSeconds`** is how long every agent must be waiting before the
+  supervisor runs the checks and, if they pass, finishes the run.
+- **`maxCheckRounds`** is how many times failing checks may send the swarm back
+  to work before the run fails.
 
 ```sh
-model-collab stop
-model-collab configure --minutes 45 --max-rounds 6
-model-collab up "Investigate the next issue"
+model-collab configure --agents 6 --minutes 90 --session-minutes 20
+model-collab configure --claude 4 --codex 0 --claude-model claude-sonnet-5-5
+model-collab up "Port the parser to the new AST" --agents 8 --effort xhigh
 ```
 
-Run `configure` without options to inspect the saved settings. Changes are rejected
-while a session is active or paused. Existing conversation history is preserved.
+Use model IDs and effort levels your installed clients and account support.
+Every agent uses its CLI's existing sign-in.
 
-## Verification commands
+## Checks
 
-Checks are named commands expressed as argument arrays:
+Checks are named commands written as argument arrays:
 
 ```sh
 model-collab init --checks '{"test":["python","-m","pytest","-q"]}'
-model-collab up "Fix the failing tests"
 ```
 
-Or load a JSON file:
+Or load them from a file:
 
 ```json
 {
@@ -82,88 +77,98 @@ Or load a JSON file:
 ```
 
 ```sh
-model-collab init --checks @checks.json
+model-collab configure --checks @checks.json
 ```
 
-The agents must run all configured checks before accepting a proposal. Each
-check runs without a shell in a fresh copy of the project with the candidate's
-changes, so shell operators such as `&&` are not interpreted. Put complex checks
-in a script and invoke that script. Linked dependency directories (see below)
-are available in that copy.
+Names use lowercase letters, digits, dashes, and underscores. Each check runs
+without a shell in a fresh copy of the swarm's `main`, with dependency links,
+so shell operators such as `&&` are not interpreted; put complex checks in a
+script, or run them through `sh -c`. Each run may take `checkTimeoutSeconds`.
+The run record keeps the last 2,000 characters of its output.
 
-Each check run may take up to 300 seconds, bounded by the session deadline. Set
-`--check-timeout SECONDS` (at most 3600) with `init`, `up` for a new project, or
-`configure`. Long output does not fail a check; the saved result keeps the last
-12,000 characters of each stream.
+Checks decide when a run is done. Without them, a run finishes as soon as every
+agent has waited for the quiet period. Agents can run any check themselves with
+the `swarm_check` tool.
 
 ## Dependency directories
 
-Each agent works in its own Git worktree, which contains only files Git tracks
-or could track. Installed dependencies are usually ignored, so the worktrees and
-check copies link to them instead. By default any ignored directory named
-`node_modules`, `.venv`, or `venv` is linked, at any depth. Build output such as
-Rust's `target/` is not linked, so the agents never build into the same
-directory.
-
-To link other ignored directories, list their names:
+Each agent's clone contains only files Git tracks or could track. Installed
+dependencies are usually ignored, so the clones and check copies link to them
+instead. By default any ignored directory named `node_modules`, `.venv`, or
+`venv` is linked, at any depth. Links are excluded from the agents' commits.
+Build output such as Rust's `target/` is not linked, so agents never build
+into the same directory.
 
 ```sh
 model-collab configure --dependency-dirs node_modules,.venv,vendor
 ```
 
 An empty list (`--dependency-dirs ''`) links nothing. Linked directories are
-shared with your working tree, not copied.
+shared with your working tree, not copied: an agent that installs a package
+into one changes it for every agent and for you.
+
+## The agents' environment
+
+Agent processes get an allowlist of environment variables: `PATH`, `HOME`,
+`USER`, `LOGNAME`, `SHELL`, `TERM`, `TMPDIR`, `TZ`, `LANG`, `LC_*`, `XDG_*`,
+`COLORTERM`, `NO_COLOR`, the CLIs' own `CODEX_HOME` and `CLAUDE_CONFIG_DIR`,
+certificate and proxy settings, and common toolchain variables (Go, Rust,
+Java, pyenv, virtualenv, conda, nvm, pnpm, Bun, Deno, Homebrew, and C
+compilers). API keys, tokens, and cloud credentials in your shell are left out.
+Go's build cache points at `.gocache` inside each clone.
+
+If a build needs another variable, pass it by name:
+
+```sh
+model-collab configure --pass-env CARGO_NET_OFFLINE,MY_TOOL_HOME
+```
+
+Pass a secret only if the work requires it. Every agent sees what you pass, and
+a swarm shares what one agent finds.
+
+## Presets
+
+`coding` is the default. `research` adds the
+[research contract](../prompts/research.md) to every session: precise claims,
+checked sources, observations separate from interpretation, and bounded
+experiments. `init` or `configure` with this preset also creates
+`.collab/RESEARCH.md`, a brief every agent reads; fill it in.
 
 ## Project memory
 
-Memory is on by default. After each goal, one Claude call at low effort updates
-`.collab/MEMORY.md`, which the agents read at the start of the next goal.
+Memory is on by default. After each run, `up` makes one model call at low
+effort to update `.collab/MEMORY.md`, which every agent reads in later runs.
 
 ```sh
 model-collab memory show              # print the memory
-model-collab memory update            # remember finished goals now
+model-collab memory update            # remember finished runs now
 model-collab memory update --agent codex --effort medium
-model-collab memory clear             # delete it; history and the board stay
+model-collab memory clear             # delete it; run history and the chat stay
 model-collab configure --memory off   # stop updating and using it
 ```
 
-Start a project without it with `model-collab init --no-memory` or
-`up --no-memory`. You can edit `MEMORY.md` yourself; the next update keeps your
-edits.
+Start a project without it with `model-collab init --no-memory`. Skip it for
+one run with `up --no-memory`. You can edit `MEMORY.md` yourself; the next
+update keeps your edits.
 
 ## Command reference
 
-| Command                        | Use                                                |
-| ------------------------------ | -------------------------------------------------- |
-| `doctor`                       | Check installed tools without invoking models      |
-| `configure`                    | Inspect or update settings for future goals        |
-| `up "goal"`                    | Initialize and start both agents                   |
-| `attach`                       | Rejoin the project's native terminal session       |
-| `status --human`               | Read a session summary                             |
-| `diff --candidate mN`          | Show a candidate's changes                         |
-| `apply`                        | Apply the agreed candidate (or `--candidate mN`)   |
-| `pause`, `resume`, `stop`      | Control the current collaboration                  |
-| `note "instruction"`           | Send a shared user correction                      |
-| `board search`, `board post`   | Search or add to the project board                 |
-| `board threads`, `board read`  | List threads or read a thread or post              |
-| `memory show`, `memory update` | Read or refresh the project memory                 |
-| `memory clear`                 | Delete the memory; history and the board stay      |
-| `init`                         | Prepare context and settings before starting       |
-| `start "goal"`                 | Start the protocol with agents you launch yourself |
-| `launch --agent codex`         | Open one native interface in this pane             |
-| `worker --agent codex`         | Run one unattended peer                            |
-| `export --format markdown`     | Export the conversation                            |
+| Command                          | Use                                                    |
+| -------------------------------- | ------------------------------------------------------ |
+| `doctor`                         | Check installed tools without starting a model         |
+| `init`                           | Create `.collab/` and settings without starting a run  |
+| `configure`                      | Inspect or change settings for later runs              |
+| `up "goal"`                      | Start a run and supervise it until it ends             |
+| `view`                           | Watch every chat in your browser                       |
+| `status`                         | Show the latest run                                    |
+| `note "instruction"`             | Post to `#general` as you; wakes every waiting agent   |
+| `stop [reason]`                  | End the run without applying                           |
+| `apply`                          | Apply the latest run's result to your working tree     |
+| `transcript`                     | Print every message of the latest run                  |
+| `memory show`, `update`, `clear` | Read, refresh, or delete the project memory            |
+| `serve --agent ID`               | One agent's MCP server; agent CLIs start it themselves |
 
-All project commands accept `--repo /path/to/project`. Run any command with
-`--help` for its options.
-
-`up --print` previews setup without changing files or invoking models.
-`up --json` emits structured startup information; worker mode emits structured
-events as well. `status` without `--human` preserves the JSON interface used by
-agents. `doctor --json` and `attach --print` support automation.
-Project setup and control commands (`init`, `start`, `configure`, `pause`,
-`note`, `resume`, and `stop`) also accept `--json`.
-
-Advanced integration commands (`serve`, `config`, `post`, `checkout`,
-`verify`, `wait`, `await-turn`, and `refresh`) are covered in the
-[protocol reference](protocol.md).
+All project commands accept `--repo /path/to/project`. `up`, `init`,
+`configure`, `status`, `transcript`, `doctor`, and `memory update` accept
+`--json`. `up --json` prints one JSON event per line and the final run record.
+Run any command with `--help` for its options.

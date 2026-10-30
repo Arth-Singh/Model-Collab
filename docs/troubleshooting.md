@@ -6,11 +6,10 @@ Start with:
 model-collab doctor
 ```
 
-This checks Node.js, tmux, Codex, and Claude Code without invoking either model.
-Model Collab also needs a Git repository; run `git init` in a project that has
-none.
-It does not test your model allowance or authentication. Sign in through each
-native CLI before starting a session.
+This checks Node.js, Git, SwarmChat, Codex, and Claude Code, the flags the
+agents need, and that you are in a Git repository, without starting a model.
+It does not test your sign-in or usage allowance. Sign in through each CLI
+before starting a run.
 
 ## The command is not found
 
@@ -31,121 +30,137 @@ its `bin` directory is on your PATH. You can also invoke the checkout directly:
 node /path/to/Model-Collab/bin/model-collab.js doctor
 ```
 
-If `doctor` reports a missing native CLI, install that tool and sign in before
-retrying. If tmux is missing, install it through your system's package manager.
-Unattended worker mode (`up --ui workers`) does not require tmux.
+## SwarmChat is missing
 
-## No panes appeared
-
-When an agent runs `up` through a shell tool, there is no interactive terminal to
-attach. Open an ordinary shell in your project and run:
+Install it as a user tool:
 
 ```sh
-model-collab attach
+uv tool install swarmchat==0.1.0      # or: pipx install swarmchat==0.1.0
 ```
 
-Inside an existing tmux session, `attach` prints the direct command so you can
-open it from a separate terminal. The workflow creates its own tmux session;
-it does not type into conversations already open in iTerm2.
+Make sure the directory it installs into, usually `~/.local/bin`, is on your
+PATH. If `swarmchat` lives elsewhere, set its path in `chatCommand` in
+`.collab/state.json`.
 
-## A model is unavailable
+## Agents cannot reach the chat or the network
 
-Check that the same model works in its native client. Account access and client
-support determine which IDs and effort levels you can use. Supply supported
-values with `up --codex-model`, `--claude-model`, and `--effort` when starting a
-new pair of processes.
+This is intended. Both CLIs' sandboxes block network access, including
+localhost, so agents reach the chat only through the `chat_*` tools of their
+MCP server, `model-collab serve`, which runs outside the sandbox. A command in
+an agent's shell that needs the network, such as installing a package, fails.
+Install dependencies in your working tree before the run; directories named in
+`dependencyDirs` are linked into every clone.
 
-A native client may also show its own sign-in, trust, or permission prompt.
-Resolve that prompt in its pane so the agent can begin. Each agent runs in a
-worktree under `.collab/work/`; Codex applies your repository's trust setting to
-it, and Claude Code may ask once for that directory.
+On Linux, Claude Code's sandbox needs `bubblewrap` and `socat`. Install them
+with your package manager, for example `sudo apt install bubblewrap socat`.
 
-## One agent stopped responding
+Tools that write caches under your home directory may fail inside the
+sandbox. Point them at a directory in the project; Model Collab already does
+this for Go.
 
-Read `model-collab status --human` and inspect both native panes. An agent may be
-waiting for its peer, asking for permission, or back at its prompt after a local
-wait ended. Tell an idle agent to "continue collaboration".
+## Agents hit usage limits
 
-If an agent process exited, open a separate terminal pane in the project and run
-`model-collab launch --agent codex` or `--agent claude`. This joins the current
-goal. Avoid starting a second instance while the original agent is still working.
+Every agent uses your own CLI sign-in, so a large swarm reaches subscription
+limits quickly. A session that fails with a usage limit shows `rate_limited`
+in the output and in `model-collab status`. The agent waits 60 seconds, then
+twice as long after each further failure, up to 15 minutes. After 5 failures
+in a row it retires; when every agent has retired, the run fails without
+applying anything.
 
-If the entire tmux session closed, run `up` again with the current goal to recreate
-the terminal. If the protocol already reached a limit, start a new goal instead.
+Run fewer agents (`--agents 4`), give one backend more of the swarm
+(`--claude 6 --codex 2`), or use a lower `--effort`. The result of a failed run
+can still be applied with `model-collab apply`.
 
-In worker mode, `codex turn failed: stalled` means Codex printed nothing for 10
-minutes twice in a row with no command running. Its connection to the model
-service was lost, most often because the computer slept or the network dropped.
-A `timeout` from either agent after the computer slept has the same cause. It
-is not a protocol result. Keep the computer awake during unattended sessions:
-on macOS, run `caffeinate -i model-collab up ...` and keep the lid open. Check
-that `codex exec "Reply with pong"` answers, then run `up` again with the same
-goal.
+## Agents duplicate each other's work
 
-## A different goal is already active
+Some duplication is normal in the first minutes, while agents claim pieces.
+Persistent duplication means the goal has fewer independent pieces than
+agents. Run fewer agents, or describe the parts of the goal in the goal text or
+`.collab/CONTEXT.md` so claims are easier. A `model-collab note` that assigns
+an area to an agent by name also works.
 
-Finish or stop the existing goal before starting another:
+## A run seems stuck
+
+Read `model-collab status`. Agents in `waiting` make no model calls. They wake
+for a direct message, an @mention, a post in another channel, or a post from
+you or the supervisor; a plain post in `#general` wakes nobody. If every agent
+is waiting but checks keep failing, the run ends after `maxCheckRounds`. Watch
+the chat with `model-collab view` to see who is blocked on whom, and steer with
+`model-collab note "..."`.
+
+A Codex session that prints nothing for 10 minutes while no command runs has
+lost its model stream, most often because the computer slept or the network
+dropped. It is retried once, then counts as a failed session. Keep the
+computer awake during a run: on macOS, run `caffeinate -i model-collab up ...`
+and keep the lid open.
+
+## The supervisor died
+
+If the terminal running `up` was killed, the run stays marked as running.
+`model-collab stop`, or the next `model-collab up`, notices that the
+supervisor is gone. It stops the orphaned agent CLIs and the chat server, and
+marks the run ended. Only processes that are still `claude` or `codex` under
+the recorded process IDs are stopped.
+
+The run's result is then the last commit on its origin's `main`, and
+`model-collab apply` takes it as usual. It was not fetched into
+`refs/model-collab/result`; to read its history before the next run replaces
+`.collab/run`:
 
 ```sh
-model-collab status --human
-model-collab stop
-model-collab up "Your next goal"
+git fetch .collab/run/origin.git main:refs/model-collab/recovered
+git log refs/model-collab/recovered
 ```
 
-A paused session also remains the current goal. Resume it explicitly or stop it.
+## A run ended before anything was applied
 
-## Changed limits did not take effect
+Only a `finished` run applies its result. Read `model-collab status` for the
+reason:
 
-`up` preserves an initialized project's settings. Stop the current session and
-update them with `configure`:
+- `expired`: the deadline passed. Raise `--minutes`, or apply the partial result.
+- `stopped`: you stopped it.
+- `failed`: checks still failed after `maxCheckRounds`, or every agent retired.
 
-```sh
-model-collab stop
-model-collab configure --minutes 45 --max-rounds 6
-```
+Review `git diff HEAD refs/model-collab/result` and run `model-collab apply` if
+you want it.
 
-The next goal will use those settings. Use `configure --json` to inspect the
-complete saved configuration.
+## The result was not applied
 
-## A Codex worker exits immediately
-
-If the worker log shows `unexpected argument '--ignore-rules'`, your Codex CLI is
-too old for unattended workers. Update it and run `model-collab doctor`.
+You edited one of the files the result changes after the run started, or a
+write failed. Nothing was written; a partial write is rolled back.
+`model-collab status` names the file or the error. Commit, stash, or restore
+your edits, then run `model-collab apply`.
 
 ## A check failed
 
-A check runs in a fresh copy of the project with the candidate's changes, using
-its configured argument array. Verify that the command works from a clean
+A check runs in a fresh copy of the swarm's `main`, using its configured
+argument array without a shell. Verify that the command works from a clean
 checkout. Only the ignored directories named in `dependencyDirs` are linked
-into the copy; see
-[dependency directories](configuration.md#dependency-directories). Build output
-and tool caches such as `__pycache__` are not. Tools that write caches under
-your home directory may fail inside the agents' sandboxes; point them at a
-directory in the project. Workers already do this for Go.
+into the copy; see [dependency directories](configuration.md#dependency-directories).
+Build output and tool caches are not.
 
-## The agreed change was not applied
+## Changed settings did not take effect
 
-The agents agreed, but you edited one of the same files after the session
-started, or a write failed. Nothing was written; a partial write is rolled
-back. `model-collab status --human` names the file or the error. Commit, stash,
-or restore your edits, then run `model-collab apply`.
+`configure` is rejected while a run is in progress, and flags on `up` apply to
+that run only. Use `model-collab configure --json` to see the saved settings.
+
+## An agent CLI exits immediately
+
+Run `model-collab doctor`. It names any flag your Codex or Claude Code version
+lacks, such as `--ignore-rules` or `--add-dir`; update that CLI. Each session's
+full output is saved under `.collab/run/logs/<agent>/`.
 
 ## Project memory was not updated
 
-The goal itself is unaffected. The message names the cause: usually the Claude
-CLI was unavailable or returned malformed memory. Retry with
+The run itself is unaffected. The message names the cause: usually the CLI was
+unavailable or returned malformed memory. Retry with
 `model-collab memory update`, or use Codex with `--agent codex`. If you edited
 `MEMORY.md` while an update was running, the update left your version in place;
 run it again.
 
-## The transcript looks out of date
+## Reporting a problem
 
-Regenerate the readable transcript from saved state:
-
-```sh
-model-collab refresh
-```
-
-Do not edit `.collab/state.json` to repair a conversation. Keep the original state
-and [open an issue](https://github.com/Arth-Singh/Model-Collab/issues) with the
-command, error message, client versions, and relevant redacted transcript.
+Do not edit `.collab/state.json` to repair a run.
+[Open an issue](https://github.com/Arth-Singh/Model-Collab/issues) with the
+command, the error message, the client versions, and a redacted
+`model-collab transcript`.

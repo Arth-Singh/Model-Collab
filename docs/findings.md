@@ -1,5 +1,7 @@
 # Ten trials on an RL programming task
 
+> This page measures the earlier two-agent pair protocol (0.4.x and before), not the swarm that replaced it in 0.5.0.
+
 All four setups solved the GAE task in all ten trials. Collaboration preserved correctness, but this task showed no accuracy advantage over either model alone or an independent pair.
 
 ![Wall time for ten trials of four model configurations](findings/gae-10-trials.svg)
