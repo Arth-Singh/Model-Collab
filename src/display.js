@@ -44,6 +44,12 @@ export function renderEvent(event) {
       );
     case 'complete':
       return line(`Run ${event.status}: ${event.reason}`);
+    case 'monitor':
+      return line(`TensorBoard scalars: ${event.dir} (open with model-collab tensorboard)`);
+    case 'score':
+      return line(
+        `score on the final main ${event.commit.slice(0, 8)}: ${event.score}${event.fraction === null ? '' : ` (${(event.fraction * 100).toFixed(1)}%)`}`,
+      );
     case 'memory':
       return line(event.message);
     default:
@@ -69,6 +75,10 @@ export function renderResult(run) {
   lines.push(
     `${result.commits} commits on the swarm's main; its history is in refs/model-collab/result.`,
   );
+  if (result.score)
+    lines.push(
+      `Score of the final main: ${result.score.score}${result.score.fraction === null ? '' : ` (${(result.score.fraction * 100).toFixed(1)}%)`}.`,
+    );
   if (result.applied)
     lines.push(`Applied to your working tree: ${result.applied.join(', ') || 'no file changes'}.`);
   else if (result.error) lines.push(`Not applied: ${result.error}`);

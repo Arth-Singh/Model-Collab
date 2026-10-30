@@ -60,6 +60,46 @@ Agent states are `starting`, `working` (in a session), `waiting` (asleep until
 a message reaches it), `backoff` (after a failed session), `retired`, and
 `stopped`.
 
+## Monitor growth with TensorBoard
+
+Every run writes TensorBoard scalars, sampled every 15 seconds, to
+`.collab/tensorboard/<start>_<N>agents_<goal>/`. The step is seconds since the
+run started.
+
+```sh
+model-collab tensorboard   # serves http://127.0.0.1:6006; --port to change
+```
+
+You need TensorBoard itself: `uv tool install tensorboard`. TensorBoard reloads
+while a run writes, so you can watch a run grow live and compare earlier runs.
+
+| Group            | Scalars                                                               |
+| ---------------- | --------------------------------------------------------------------- |
+| `main`           | commits, files and lines changed since the start, distinct committers |
+| `progress`       | `score` and `score_fraction` from your score command                  |
+| `checks`         | `passed_fraction` of each check round                                 |
+| `agents`         | how many agents are starting, working, waiting, in backoff, retired   |
+| `sessions`       | total, failed, and rate-limited sessions                              |
+| `tokens`, `cost` | input, cached input, output, per CLI, and Claude Code's reported cost |
+| `chat`           | messages in total, in `#general`, and direct                          |
+| `machine`        | load average, free memory, and the agents' resident memory            |
+| `agent_*`        | tokens, sessions, and commits for each agent                          |
+
+The score is the measure of growth. Give a command that prints how far `main`
+has come; the supervisor runs it on `main` in a clean checkout every 2 minutes
+and on the final `main`, and plots the last `x/y` (or number) it prints. Agents
+never run it, and the final score is in `model-collab status`:
+
+```sh
+model-collab up "Implement SPEC.md" --agents 8 \
+  --score '["python3","-m","pytest","-q","tests/acceptance"]' --score-seconds 60
+```
+
+A score command can read files outside the repository, such as held-out tests.
+Agents cannot reach the network, but they can read files, so keep tests out of
+their reach if they must stay hidden; see [the trust boundary](protocol.md).
+To log nothing, pass `--tensorboard off`.
+
 ## Steer
 
 ```sh

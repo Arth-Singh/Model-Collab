@@ -39,6 +39,15 @@ export const configSchema = z
       )
       .max(20)
       .default(['node_modules', '.venv', 'venv']),
+    // TensorBoard scalars for every run, sampled every monitorSeconds, written
+    // under tensorboardDir (default .collab/tensorboard, relative to the project).
+    tensorboard: z.boolean().default(true),
+    tensorboardDir: z.string().min(1).optional(),
+    monitorSeconds: z.number().min(1).max(600).default(15),
+    // A command run on main in a clean checkout every scoreSeconds; the last
+    // "x/y" or number it prints is plotted as progress. Agents never run it.
+    scoreCommand: z.array(z.string().min(1)).max(30).default([]),
+    scoreSeconds: z.number().min(5).max(3600).default(120),
     // Extra environment variables agents may see; secrets stay out by default.
     passEnv: z.array(envName).max(50).default([]),
     chatCommand: z.string().min(1).default('swarmchat'),

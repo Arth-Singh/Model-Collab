@@ -63,7 +63,8 @@ model-collab doctor
 ```
 
 `doctor` checks Node.js, Git, SwarmChat, both CLIs and the flags the agents
-need, and that you are in a Git repository. It does not start a model.
+need, and that you are in a Git repository. It does not start a model. To plot
+runs with `model-collab tensorboard`, also run `uv tool install tensorboard`.
 
 The package is installed from GitHub, not npm. Keep this checkout while using
 `npm link`; to update, run `git pull` and `npm ci` here.
@@ -89,6 +90,7 @@ From another shell in the same project:
 | `model-collab stop`                | Ends the run; nothing is applied                             |
 | `model-collab apply`               | Applies the latest run's result, for example after `stop`    |
 | `model-collab transcript`          | Prints every chat message of the latest run                  |
+| `model-collab tensorboard`         | Plots every run's growth: commits, tokens, agents, score     |
 | `git log refs/model-collab/result` | Shows the swarm's commits after a run ends                   |
 
 When a run finishes, review the change with `git diff`, as you would a

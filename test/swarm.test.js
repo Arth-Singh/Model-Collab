@@ -7,7 +7,7 @@ import { ChatClient, readTranscript } from '../src/chat.js';
 import { Store } from '../src/store.js';
 import { applyLatest, rosterFor, runSwarm, sessionPrompt, stopRun } from '../src/swarm.js';
 import { configSchema } from '../src/schema.js';
-import { gitProject, writeFiles } from './helpers.js';
+import { gitProject, scalarsIn, writeFiles } from './helpers.js';
 
 const skip =
   spawnSync('swarmchat', ['--version']).status === 0 ? false : 'swarmchat is not installed';
@@ -118,6 +118,9 @@ test('a quiet swarm whose checks pass has its result applied', { skip }, async (
       claude: 1,
       codex: 1,
       checks: { both: ['sh', '-c', 'test -f lexer.js && test -f cli.js'] },
+      monitorSeconds: 1,
+      scoreSeconds: 5,
+      scoreCommand: ['sh', '-c', 'echo "SCORE $(ls *.js 2>/dev/null | wc -l | tr -d " ")/2"'],
     },
     session,
     onEvent: (event) => events.push(event),
@@ -138,7 +141,23 @@ test('a quiet swarm whose checks pass has its result applied', { skip }, async (
       .sort(),
     ['claude-1', 'codex-1'],
   );
-  assert.equal(events.at(-1).event, 'complete');
+  assert.equal(events.at(-1).event, 'score');
+  assert.ok(events.every((e) => typeof e.at === 'string'));
+  assert.deepEqual(
+    { score: run.result.score.score, fraction: run.result.score.fraction },
+    { score: 2, fraction: 1 },
+  );
+  const monitorDir = events.find((e) => e.event === 'monitor').dir;
+  assert.match(monitorDir, /\.collab\/tensorboard\/.*_2agents_build-a-lexer-and-a-cli$/);
+  const samples = await scalarsIn(monitorDir);
+  const last = (tag) => samples.filter((e) => tag in e.scalars).at(-1)?.scalars[tag];
+  assert.equal(last('main/commits'), 2);
+  assert.equal(last('main/committers'), 2);
+  assert.equal(last('progress/score_fraction'), 1);
+  assert.equal(last('agent_commits/codex-1'), 1);
+  assert.equal(last('checks/passed_fraction'), 1);
+  assert.ok(last('tokens/total') >= 200);
+  assert.ok(last('chat/general') >= 3);
   assert.match(sessions[0].prompt, /You are claude-1/);
   assert.ok(run.agents.every((a) => a.usage.inputTokens >= 100 && a.state === 'stopped'));
 

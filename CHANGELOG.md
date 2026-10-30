@@ -30,6 +30,10 @@ pair's commands, MCP tools, board, and tmux panes are gone.
   and tokens in your shell never reach them unless you pass them by name.
 - **Project memory** now folds each run's chat, check results, and agent
   summaries into `.collab/MEMORY.md`.
+- **TensorBoard.** Every run writes scalars (commits, lines changed, agent
+  states, sessions, tokens, chat volume, machine load, per-agent numbers) every
+  15 seconds; `model-collab tensorboard` serves them. An optional score command
+  runs on `main` at intervals and plots progress.
 
 ## 0.4.0 — 2026-09-27
 

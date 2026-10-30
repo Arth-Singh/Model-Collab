@@ -15,27 +15,32 @@ described in [`schemas/config.schema.json`](../schemas/config.schema.json).
 
 ## Settings
 
-| Setting               | Flag                          | Default                         | Range or form                      |
-| --------------------- | ----------------------------- | ------------------------------- | ---------------------------------- |
-| `claude`              | `--claude N`                  | 9                               | 0–32 Claude Code agents            |
-| `codex`               | `--codex N`                   | 9                               | 0–32 Codex agents                  |
-| (both)                | `--agents N`                  |                                 | Claude Code gets the odd one       |
-| `models.claude`       | `--claude-model ID`           | `claude-opus-5-5`               | Any model your Claude Code accepts |
-| `models.codex`        | `--codex-model ID`            | `gpt-6-astra`                   | Any model your Codex accepts       |
-| `effort`              | `--effort LEVEL`              | `high`                          | Passed to both CLIs                |
-| `deadlineMinutes`     | `--minutes N`                 | 60                              | 0.1–1440                           |
-| `sessionMinutes`      | `--session-minutes N`         | 30                              | 0.1–240                            |
-| `maxSessions`         | `--max-sessions N`            | 40                              | 1–500 sessions per agent           |
-| `quietSeconds`        | `--quiet-seconds N`           | 30                              | 1–3600                             |
-| `staggerSeconds`      | `--stagger-seconds N`         | 3                               | 0–120                              |
-| `checks`              | `--checks JSON`               | none                            | See [checks](#checks)              |
-| `checkTimeoutSeconds` | `--check-timeout N`           | 300                             | 1–3600                             |
-| `maxCheckRounds`      | `--max-check-rounds N`        | 3                               | 1–10                               |
-| `dependencyDirs`      | `--dependency-dirs A,B`       | `node_modules`, `.venv`, `venv` | Up to 20 folder names              |
-| `passEnv`             | `--pass-env A,B`              | none                            | Up to 50 variable names            |
-| `preset`              | `--preset NAME`               | `coding`                        | `coding` or `research`             |
-| `memory`              | see [memory](#project-memory) | on                              | on or off                          |
-| `chatCommand`         | (edit `state.json`)           | `swarmchat`                     | Command name or path               |
+| Setting               | Flag                          | Default                         | Range or form                        |
+| --------------------- | ----------------------------- | ------------------------------- | ------------------------------------ |
+| `claude`              | `--claude N`                  | 9                               | 0–32 Claude Code agents              |
+| `codex`               | `--codex N`                   | 9                               | 0–32 Codex agents                    |
+| (both)                | `--agents N`                  |                                 | Claude Code gets the odd one         |
+| `models.claude`       | `--claude-model ID`           | `claude-opus-5-5`               | Any model your Claude Code accepts   |
+| `models.codex`        | `--codex-model ID`            | `gpt-6-astra`                   | Any model your Codex accepts         |
+| `effort`              | `--effort LEVEL`              | `high`                          | Passed to both CLIs                  |
+| `deadlineMinutes`     | `--minutes N`                 | 60                              | 0.1–1440                             |
+| `sessionMinutes`      | `--session-minutes N`         | 30                              | 0.1–240                              |
+| `maxSessions`         | `--max-sessions N`            | 40                              | 1–500 sessions per agent             |
+| `quietSeconds`        | `--quiet-seconds N`           | 30                              | 1–3600                               |
+| `staggerSeconds`      | `--stagger-seconds N`         | 3                               | 0–120                                |
+| `checks`              | `--checks JSON`               | none                            | See [checks](#checks)                |
+| `checkTimeoutSeconds` | `--check-timeout N`           | 300                             | 1–3600                               |
+| `maxCheckRounds`      | `--max-check-rounds N`        | 3                               | 1–10                                 |
+| `dependencyDirs`      | `--dependency-dirs A,B`       | `node_modules`, `.venv`, `venv` | Up to 20 folder names                |
+| `passEnv`             | `--pass-env A,B`              | none                            | Up to 50 variable names              |
+| `tensorboard`         | `--tensorboard on\|off`       | on                              | on or off                            |
+| `tensorboardDir`      | `--tensorboard-dir DIR`       | `.collab/tensorboard`           | Relative to the project, or absolute |
+| `monitorSeconds`      | `--monitor-seconds N`         | 15                              | 1–600                                |
+| `scoreCommand`        | `--score JSON`                | none                            | An argv array, like a check          |
+| `scoreSeconds`        | `--score-seconds N`           | 120                             | 5–3600                               |
+| `preset`              | `--preset NAME`               | `coding`                        | `coding` or `research`               |
+| `memory`              | see [memory](#project-memory) | on                              | on or off                            |
+| `chatCommand`         | (edit `state.json`)           | `swarmchat`                     | Command name or path                 |
 
 A swarm needs at least one agent. Agents are named `claude-1`, `codex-1`,
 `claude-2`, and so on, and start `staggerSeconds` apart in that order.
@@ -49,6 +54,10 @@ A swarm needs at least one agent. Agents are named `claude-1`, `codex-1`,
   supervisor runs the checks and, if they pass, finishes the run.
 - **`maxCheckRounds`** is how many times failing checks may send the swarm back
   to work before the run fails.
+- **`tensorboardDir`** collects every run's TensorBoard scalars. Point several
+  projects at one absolute folder to compare their runs side by side.
+- **`scoreCommand`** runs on `main` in a clean checkout every `scoreSeconds` and
+  once more on the final `main`. See [monitoring](usage.md#monitor-growth-with-tensorboard).
 
 ```sh
 model-collab configure --agents 6 --minutes 90 --session-minutes 20
@@ -165,6 +174,7 @@ update keeps your edits.
 | `stop [reason]`                  | End the run without applying                           |
 | `apply`                          | Apply the latest run's result to your working tree     |
 | `transcript`                     | Print every message of the latest run                  |
+| `tensorboard`                    | Open TensorBoard on every run's scalars                |
 | `memory show`, `update`, `clear` | Read, refresh, or delete the project memory            |
 | `serve --agent ID`               | One agent's MCP server; agent CLIs start it themselves |
 

@@ -156,7 +156,7 @@ export class Store {
     );
     const exists = await fs.stat(this.runDir).catch(() => null);
     if (!exists) return;
-    for (const name of ['work', 'git', 'check', 'result', 'tokens.json'])
+    for (const name of ['work', 'git', 'check', 'score', 'result', 'tokens.json'])
       await fs.rm(path.join(this.runDir, name), { recursive: true, force: true });
     await fs.rename(this.runDir, path.join(this.historyDir, run.id));
   }

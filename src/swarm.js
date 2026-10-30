@@ -26,7 +26,8 @@ import {
   originLog,
 } from './workspace.js';
 import { BACKENDS, runSession } from './agent.js';
-import { DEFAULT_EFFORT, DEFAULT_MODELS, runCommand } from './process.js';
+import { DEFAULT_EFFORT, DEFAULT_MODELS, delay, runCommand } from './process.js';
+import { RunMonitor } from './monitor.js';
 
 // A run: capture the project, give every agent a clone of a shared origin and
 // a chat account, then keep each agent in a loop of fresh sessions until the
@@ -49,20 +50,6 @@ const CONTEXT_FILES = ['CONTEXT.md', 'RESEARCH.md', 'MEMORY.md'];
 
 const now = () => new Date().toISOString();
 const zeroUsage = () => ({ inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, costUsd: 0 });
-
-/** Sleep, waking early when `signal` aborts. */
-function delay(ms, signal) {
-  return new Promise((resolve) => {
-    if (signal?.aborted) return resolve();
-    const timer = setTimeout(done, ms);
-    function done() {
-      clearTimeout(timer);
-      signal?.removeEventListener('abort', done);
-      resolve();
-    }
-    signal?.addEventListener('abort', done, { once: true });
-  });
-}
 
 /** Agent IDs, interleaved so both backends start early: claude-1, codex-1, claude-2, ... */
 export function rosterFor(config) {
@@ -257,6 +244,8 @@ export async function runSwarm({
 }) {
   root = path.resolve(root);
   ({ goal, criteria } = goalSchema.parse({ goal, criteria }));
+  const report = onEvent;
+  onEvent = (event) => report({ at: now(), ...event });
   const store = new Store(root);
   if (!(await store.load())) await store.init();
   await recoverStaleRun(store);
@@ -319,7 +308,8 @@ export async function runSwarm({
   };
   const controller = new AbortController();
   const runSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
-  let ended = null;
+  let ended = null,
+    monitor = null;
   try {
     const tokens = await provisionUsers({
       command: chatCommand,
@@ -362,6 +352,16 @@ export async function runSwarm({
       deadlineAt: run.deadlineAt,
       chatUrl: server.url,
     });
+    if (config.tensorboard) {
+      monitor = new RunMonitor({
+        dir: path.resolve(root, config.tensorboardDir ?? path.join('.collab', 'tensorboard')),
+        run,
+        store,
+        config,
+      });
+      onEvent({ event: 'monitor', dir: monitor.dir });
+    }
+    const watching = monitor?.watch(runSignal);
 
     const context = await sharedContext(store.dir);
     const loops = agents.map((agent, index) =>
@@ -371,11 +371,21 @@ export async function runSwarm({
     );
     await coordinate(system);
     controller.abort();
-    await Promise.all(loops);
+    await Promise.all([...loops, watching]);
     await finish(system);
+    if (monitor) {
+      const score = await monitor.finish();
+      monitor = null;
+      if (score) {
+        run.result.score = score;
+        await persist();
+        onEvent({ event: 'score', ...score });
+      }
+    }
     return run;
   } catch (error) {
     controller.abort();
+    monitor?.writer.close();
     if (!run.endedAt) {
       run.status = 'failed';
       run.stopReason = `${ended ? `${ended.status}, then ` : ''}the supervisor failed: ${error.message}`;

@@ -89,6 +89,20 @@ export function runCommand(
   });
 }
 
+/** Sleep, waking early when `signal` aborts. */
+export function delay(ms, signal) {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve();
+    const timer = setTimeout(done, ms);
+    function done() {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', done);
+      resolve();
+    }
+    signal?.addEventListener('abort', done, { once: true });
+  });
+}
+
 export const DEFAULT_MODELS = Object.freeze({
   codex: 'gpt-6-astra',
   claude: 'claude-opus-5-5',

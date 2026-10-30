@@ -59,6 +59,11 @@ function settingOptions(command) {
     .option('--max-check-rounds <n>', 'Failed check rounds before the run gives up', Number)
     .option('--dependency-dirs <names>', 'Comma-separated ignored folders to link into clones')
     .option('--pass-env <names>', 'Comma-separated environment variables agents may see')
+    .option('--tensorboard <on|off>', 'Write TensorBoard scalars for each run', onOff)
+    .option('--tensorboard-dir <dir>', 'Where runs write TensorBoard logs')
+    .option('--monitor-seconds <n>', 'How often the TensorBoard scalars are sampled', Number)
+    .option('--score <json>', 'Command (JSON argv array) that scores main during a run, or @file')
+    .option('--score-seconds <n>', 'How often the score command runs', Number)
     .option('--preset <name>', 'coding or research');
 }
 
@@ -83,6 +88,11 @@ async function settingChanges(opts, current = {}) {
     maxCheckRounds: opts.maxCheckRounds,
     dependencyDirs: opts.dependencyDirs === undefined ? undefined : list(opts.dependencyDirs),
     passEnv: opts.passEnv === undefined ? undefined : list(opts.passEnv),
+    tensorboard: opts.tensorboard,
+    tensorboardDir: opts.tensorboardDir,
+    monitorSeconds: opts.monitorSeconds,
+    scoreCommand: opts.score === undefined ? undefined : await jsonInput(opts.score),
+    scoreSeconds: opts.scoreSeconds,
     memory: opts.memory,
   };
   if (opts.claudeModel || opts.codexModel)
@@ -104,6 +114,8 @@ function renderConfig(config) {
     `Checks: ${Object.keys(config.checks).join(', ') || 'none'} (timeout ${config.checkTimeoutSeconds} seconds)`,
     `Linked dependency folders: ${config.dependencyDirs.join(', ') || 'none'}`,
     `Extra environment for agents: ${config.passEnv.join(', ') || 'none'}`,
+    `TensorBoard: ${config.tensorboard ? `on, every ${config.monitorSeconds} seconds, in ${config.tensorboardDir ?? '.collab/tensorboard'}` : 'off'}`,
+    `Score: ${config.scoreCommand.length ? `${config.scoreCommand.join(' ')}, every ${config.scoreSeconds} seconds` : 'none'}`,
     `Project memory: ${config.memory ? 'on' : 'off'}`,
   ].join('\n');
 }
@@ -253,6 +265,40 @@ withRepo(program.command('view').description('Watch every chat of the swarm in y
     const child = spawn(command, args, { stdio: 'inherit' });
     process.exitCode = await new Promise((resolve, reject) => {
       child.on('error', reject);
+      child.on('exit', (code) => resolve(code ?? 1));
+    });
+  });
+
+withRepo(
+  program
+    .command('tensorboard')
+    .description("Open TensorBoard on every run's scalars: commits, tokens, agents, chat, score."),
+)
+  .option('--port <n>', 'Port for TensorBoard', '6006')
+  .option('--host <host>', 'Address TensorBoard listens on', '127.0.0.1')
+  .action(async (opts) => {
+    const store = new Store(opts.repo);
+    const { config } = await store.read();
+    const dir = path.resolve(
+      store.root,
+      config.tensorboardDir ?? path.join('.collab', 'tensorboard'),
+    );
+    await fs.mkdir(dir, { recursive: true });
+    const child = spawn(
+      'tensorboard',
+      ['--logdir', dir, '--port', opts.port, '--host', opts.host],
+      {
+        stdio: 'inherit',
+      },
+    );
+    process.exitCode = await new Promise((resolve, reject) => {
+      child.on('error', (error) =>
+        reject(
+          new Error(
+            `Could not start tensorboard (${error.message}). Install it with: uv tool install tensorboard`,
+          ),
+        ),
+      );
       child.on('exit', (code) => resolve(code ?? 1));
     });
   });
