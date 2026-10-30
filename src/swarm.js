@@ -443,6 +443,9 @@ export async function runSwarm({
       }
       if (agent.sessions >= config.maxSessions)
         return retire(agent, `reached the limit of ${config.maxSessions} sessions`);
+      // Past the deadline a session would end before it starts; the coordinator
+      // ends the run on its next tick.
+      if (Date.now() >= Date.parse(run.deadlineAt)) return;
       agent.sessions++;
       agent.state = 'working';
       lastStarted = now();
@@ -565,10 +568,17 @@ export async function runSwarm({
     const failed = results.filter((r) => !r.passed);
     onEvent({ event: 'checks', commit, results });
     if (!failed.length) {
-      ended = { status: 'finished', reason: 'every agent is waiting and the checks pass' };
+      // Checks can take minutes. If a message woke an agent or main moved
+      // meanwhile, the swarm was not done after all.
+      const still =
+        agents.every((a) => a.state === 'waiting' || a.state === 'retired') &&
+        (await originHead(run.origin)) === commit;
+      if (still)
+        ended = { status: 'finished', reason: 'every agent is waiting and the checks pass' };
       return;
     }
-    if (run.checkRounds.length >= config.maxCheckRounds) {
+    const failedRounds = run.checkRounds.filter((round) => round.results.some((r) => !r.passed));
+    if (failedRounds.length >= config.maxCheckRounds) {
       ended = {
         status: 'failed',
         reason: `checks failed: ${failed.map((r) => r.name).join(', ')}`,
@@ -577,7 +587,7 @@ export async function runSwarm({
     }
     await system.send(
       `#${GENERAL}`,
-      `Checks failed on main at ${commit.slice(0, 12)} (round ${run.checkRounds.length} of ${config.maxCheckRounds}):\n${failed
+      `Checks failed on main at ${commit.slice(0, 12)} (round ${failedRounds.length} of ${config.maxCheckRounds}):\n${failed
         .map((r) => `- ${r.name}: ${r.error ?? `exit ${r.code}`}\n${r.output.slice(-800)}`)
         .join('\n')}`,
     );
