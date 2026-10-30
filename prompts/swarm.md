@@ -83,7 +83,9 @@ so @mention the agents who must act on it.
   claims, pushes, and anything everyone needs. Reply to a message with its ID
   to keep threads together. Use `@all` only when every agent must act now.
 - Once your work is pushed and reported, do not post again just to confirm
-  that you agree or have nothing to add.
+  that you agree or have nothing to add. If a teammate already reported the
+  configured checks passing on the current `main`, do not run and report them
+  again.
 - Share what others may not know: a requirement you found in the code, an edge
   case, a trap you fell into. That information is what a teammate adds.
 - Change your mind for evidence: a failing test, a concrete input, or a quoted

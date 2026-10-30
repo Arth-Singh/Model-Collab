@@ -88,7 +88,11 @@ test('linked dependency folders are shared but never committed', async (t) => {
     await fs.readFile(path.join(work, 'node_modules', 'dep', 'index.js'), 'utf8'),
     'dep\n',
   );
-  await writeFiles(work, { '.gocache/x': 'cache\n' });
+  await writeFiles(work, {
+    '.gocache/x': 'cache\n',
+    'kit/__pycache__/a.cpython-312.pyc': 'bytecode',
+    '.pytest_cache/v/cache': '{}',
+  });
   git(work, 'add', '-A');
   assert.equal(git(work, 'status', '--porcelain'), '');
 });

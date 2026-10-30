@@ -28,6 +28,14 @@ const CACHE_EXCLUDES = [
   ':(top,exclude,glob)**/*.py[co]',
   ':(top,exclude,glob)**/.DS_Store',
 ];
+const AGENT_CACHE_PATTERNS = [
+  '__pycache__/',
+  '*.py[cod]',
+  '.pytest_cache/',
+  '.mypy_cache/',
+  '.ruff_cache/',
+  '.DS_Store',
+];
 const sha256 = (buffer) => createHash('sha256').update(buffer).digest('hex');
 const fail = (message) => {
   throw new Error(message);
@@ -213,9 +221,14 @@ export async function cloneForAgent(base, origin, { workspace, gitDir, name }) {
     'tag.gpgsign': 'false',
   };
   for (const [key, value] of Object.entries(settings)) await git(workspace, ['config', key, value]);
-  // Links to shared dependency folders and Go's cache are never part of the work.
-  // No trailing slash: a symlink is a file to Git's ignore rules.
-  const excluded = [...base.links, '.gocache'].map((entry) => `/${entry}`).join('\n');
+  // Links to shared dependency folders and Go's cache are never part of the work
+  // (no trailing slash: a symlink is a file to Git's ignore rules). Neither are
+  // tool caches: in test runs, agents committed __pycache__ and every later
+  // rebase hit binary conflicts. Tracked files are unaffected.
+  const excluded = [
+    ...[...base.links, '.gocache'].map((entry) => `/${entry}`),
+    ...AGENT_CACHE_PATTERNS,
+  ].join('\n');
   await fs.appendFile(path.join(gitDir, 'info', 'exclude'), `\n${excluded}\n`);
   await linkDependencies(base, workspace);
   return path.join(workspace, base.prefix);
