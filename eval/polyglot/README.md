@@ -91,12 +91,17 @@ Run every command from this directory.
   and execpolicy rules do not apply. Claude Code still loads your global
   `CLAUDE.md`, and Codex still loads your `AGENTS.md` and skills, in every
   condition.
-- The pair runs `model-collab up --ui workers` with a 25-minute session and a
-  15-minute turn limit, with project memory off.
+- The collaborative condition (`collab-new`) runs `model-collab up` with one
+  Claude Code and one Codex agent by default; `--swarm-claude` and
+  `--swarm-codex` change the swarm's size. It has a 25-minute deadline,
+  15-minute sessions, and project memory off. The published results in
+  [docs/evaluation.md](../../docs/evaluation.md) come from the earlier pair
+  protocol at commit `4d45a87`, not from the swarm.
 - Two kinds of job are infrastructure failures, not results: a Codex run that
   prints nothing for 10 minutes while no command is running, which has lost its
   model stream, and on macOS a job the computer slept through, found in the
-  `pmset` power log. The pair's worker first retries a stalled turn itself. The
+  `pmset` power log. The swarm's session runner first retries a stalled Codex
+  session itself. The
   harness then discards such an attempt and runs the job once more from a
   fresh workspace; `infraRetries` records it. A job whose second attempt fails
   the same way is recorded with `stalled` or `slept` set and counts as a

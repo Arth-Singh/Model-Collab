@@ -3,7 +3,7 @@
 // skipped. Usage:
 //   node run-conditions.mjs --out runs/hard-t1 --trial 1 [--set hard|heldout]
 //     [--conditions solo-codex,solo-claude,collab-new] [--tasks id1,id2]
-//     [--concurrency 3] [--effort high]
+//     [--concurrency 3] [--effort high] [--swarm-claude 1] [--swarm-codex 1]
 // COLLAB_DIR selects the Model Collab checkout under test (default: this
 // repository). Pin it to a worktree at a fixed commit so edits made during a
 // run cannot change it halfway through.
@@ -42,6 +42,9 @@ const { values: opts } = parseArgs({
     trial: { type: 'string', default: '1' },
     'codex-model': { type: 'string', default: 'gpt-6-astra' },
     'claude-model': { type: 'string', default: 'claude-opus-5-5' },
+    // Swarm size for collab-new. One of each matches the published pair runs.
+    'swarm-claude': { type: 'string', default: '1' },
+    'swarm-codex': { type: 'string', default: '1' },
   },
 });
 const MODELS = { codex: opts['codex-model'], claude: opts['claude-model'] };
@@ -202,14 +205,14 @@ const zero = { costUsd: 0, inputTokens: 0, outputTokens: 0 };
 
 async function collabUsage(ws) {
   const usage = { codex: { ...zero, calls: 0 }, claude: { ...zero, calls: 0 } };
-  for (const agent of ['codex', 'claude']) {
-    const dir = path.join(ws, '.collab', 'workers', agent);
-    const names = await fs.readdir(dir).catch(() => []);
-    for (const name of names.filter((n) => n.endsWith('.log.json'))) {
+  const logs = path.join(ws, '.collab', 'run', 'logs');
+  for (const agent of await fs.readdir(logs).catch(() => [])) {
+    const dir = path.join(logs, agent);
+    for (const name of (await fs.readdir(dir)).filter((n) => n.endsWith('.log.json'))) {
       const log = JSON.parse(await fs.readFile(path.join(dir, name), 'utf8'));
-      const u = agent === 'claude' ? claudeUsage(log.stdout) : codexUsage(log.stdout);
-      Object.assign(usage[agent], add(usage[agent], u));
-      usage[agent].calls++;
+      const u = log.backend === 'claude' ? claudeUsage(log.stdout) : codexUsage(log.stdout);
+      Object.assign(usage[log.backend], add(usage[log.backend], u));
+      usage[log.backend].calls++;
     }
   }
   return usage;
@@ -218,15 +221,13 @@ async function collabUsage(ws) {
 async function collabProcess(ws) {
   try {
     const state = JSON.parse(await fs.readFile(path.join(ws, '.collab', 'state.json'), 'utf8'));
-    const s = state.session;
+    const run = state.run;
     return {
-      status: s.status,
-      stopReason: s.stopReason,
-      round: s.round,
-      messages: s.messages.length,
-      kinds: s.messages.map((m) => `${m.agent}:${m.kind}`),
-      winner: s.winner,
-      checks: s.checks.length,
+      status: run.status,
+      stopReason: run.stopReason,
+      agents: run.agents.map((a) => `${a.id}:${a.sessions}`),
+      commits: run.result?.commits ?? null,
+      checkRounds: run.checkRounds.length,
     };
   } catch (error) {
     return { status: 'missing', error: error.message };
@@ -297,15 +298,17 @@ async function runCondition(condition, task, ws, dir) {
       prompt,
       '--repo',
       ws,
-      '--ui',
-      'workers',
       '--json',
+      '--claude',
+      opts['swarm-claude'],
+      '--codex',
+      opts['swarm-codex'],
       '--effort',
       opts.effort,
       '--minutes',
       String(COLLAB_MINUTES),
-      '--turn-timeout',
-      '900',
+      '--session-minutes',
+      '15',
       '--codex-model',
       MODELS.codex,
       '--claude-model',
@@ -317,8 +320,8 @@ async function runCondition(condition, task, ws, dir) {
   );
   return {
     run: r,
-    // The worker already retried the stalled turn once before giving up.
-    stalled: /turn failed: stalled/.test(r.stderr),
+    // The session runner already retried a stalled Codex session once.
+    stalled: /Codex stopped responding twice/.test(r.stdout),
     usage: await collabUsage(ws),
     process: await collabProcess(ws),
   };
@@ -364,6 +367,7 @@ await fs.writeFile(
       tasks: taskIds,
       soloTimeoutMs: SOLO_TIMEOUT_MS,
       collabMinutes: COLLAB_MINUTES,
+      swarm: { claude: Number(opts['swarm-claude']), codex: Number(opts['swarm-codex']) },
       codexIdleMs: CODEX_IDLE_MS,
       collabCommit: gitHead(COLLAB_DIR),
       harnessCommit: gitHead(HERE),
