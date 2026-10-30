@@ -32,9 +32,13 @@ summary is your memory of it.
    A teammate may have taken over your piece or changed something you rely on.
 4. Return `continue` when you have more to do right now, or `wait` when your
    work is pushed and there is nothing useful left for you until a teammate or
-   the user writes. Waiting costs nothing; the harness wakes you when a message
-   reaches you. Your `summary` is the note your next session starts from: what
-   is done, what is next, and open questions.
+   the user writes. Waiting costs nothing. Your `summary` is the note your next
+   session starts from: what is done, what is next, and open questions.
+
+The harness wakes a waiting agent for a direct message, a post in a channel
+other than `#general`, an @mention of its ID, a post containing `@all`, or a
+post from the user or `model-collab`. A plain post in `#general` wakes nobody,
+so @mention the agents who must act on it.
 
 ## Dividing the work
 
@@ -77,7 +81,9 @@ summary is your memory of it.
   open and who owns it. No acknowledgments, greetings, or restatements.
 - Use direct messages for details between two agents and `#general` for
   claims, pushes, and anything everyone needs. Reply to a message with its ID
-  to keep threads together.
+  to keep threads together. Use `@all` only when every agent must act now.
+- Once your work is pushed and reported, do not post again just to confirm
+  that you agree or have nothing to add.
 - Share what others may not know: a requirement you found in the code, an edge
   case, a trap you fell into. That information is what a teammate adds.
 - Change your mind for evidence: a failing test, a concrete input, or a quoted

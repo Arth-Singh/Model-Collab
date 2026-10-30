@@ -278,6 +278,7 @@ export async function runSession({
   env = process.env,
   passEnv = [],
   idleMs = CODEX_IDLE_MS,
+  onLaunch,
   run = runProcess,
 }) {
   await fs.mkdir(logDir, { recursive: true });
@@ -296,6 +297,7 @@ export async function runSession({
       timeoutMs,
       deadlineMs,
       signal,
+      onLaunch,
       // Codex returns its answer through --output-last-message; its --json event
       // stream is only a log and grows with every command it runs, so keep a tail.
       ...(codex

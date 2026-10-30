@@ -145,6 +145,26 @@ async function resolveCommand(command) {
   return found.stdout.trim();
 }
 
+/**
+ * Stop agent sessions a dead supervisor left running. Each session leads its
+ * own process group; a PID is signalled only while it is still an agent CLI.
+ */
+export async function stopOrphans(agents = []) {
+  let stopped = 0;
+  for (const { pid, backend } of agents) {
+    if (!pid || !alive(pid)) continue;
+    const ps = await runCommand(['ps', '-p', String(pid), '-o', 'command='], { timeoutMs: 5000 });
+    if (ps.code !== 0 || !ps.stdout.includes(backend)) continue;
+    try {
+      process.kill(-pid, 'SIGTERM');
+      stopped++;
+    } catch {
+      /* Already gone. */
+    }
+  }
+  return stopped;
+}
+
 /** End a run whose supervisor died, so a new run can start. */
 async function recoverStaleRun(store) {
   const state = await store.load();
@@ -153,6 +173,7 @@ async function recoverStaleRun(store) {
     throw new Error(
       `A run is in progress (supervisor PID ${state.run.supervisorPid}). Stop it with model-collab stop.`,
     );
+  await stopOrphans(state.run.agents);
   await stopStaleServer(state.run.chat?.pid);
   await store.update((s) => {
     s.run.status = 'failed';
@@ -243,6 +264,7 @@ export async function runSwarm({
     lastSummary: null,
     lastFailure: null,
     retiredReason: null,
+    pid: null,
   }));
   for (const agent of agents)
     agent.workspace = await cloneForAgent(base, origin, {
@@ -299,6 +321,7 @@ export async function runSwarm({
       [SYSTEM, HUMAN, ...agents.map((a) => a.id)],
       'The whole swarm',
     );
+    const generalId = (await system.info(GENERAL)).id;
     // Older messages belong to earlier runs; agents start reading from this goal.
     for (const client of Object.values(clients)) await client.read({ limit: 1000 });
     await system.read({ limit: 1000 });
@@ -322,7 +345,7 @@ export async function runSwarm({
 
     const context = await sharedContext(store.dir);
     const loops = agents.map((agent, index) =>
-      agentLoop(agent, index, clients[agent.id], context).catch((error) =>
+      agentLoop(agent, index, clients[agent.id], context, generalId).catch((error) =>
         retire(agent, `supervisor error: ${error.message}`),
       ),
     );
@@ -363,23 +386,30 @@ export async function runSwarm({
   }
 
   /**
-   * Block until an unread message from after the agent's last session started
-   * reaches it. Unread messages from before that session began were in front of
-   * the agent when it started; they are marked read so they cannot wake it again.
+   * Block until a message that needs this agent arrives after its last session
+   * started: a direct message, a post in a channel other than #general, an
+   * @mention, a post with @all, or a post from the user or the harness. Plain
+   * status posts in #general wake nobody; otherwise every "done" message would
+   * start a session in every waiting agent, and those would post again.
    */
-  async function wake(agent, client, since) {
+  async function wake(agent, client, since, generalId) {
+    const q = JSON.stringify;
+    const where = [
+      `m.at > ${q(since)}`,
+      `m.sender != ${q(agent.id)}`,
+      `(m.sender in (${q(HUMAN)}, ${q(SYSTEM)}) or m.chat != ${q(generalId)} or ${q(agent.id)} in (m.mentions or []) or '@all' in m.text)`,
+    ].join(' and ');
     while (!runSignal.aborted) {
       const messages = await client
-        .wait({ timeoutSeconds: WAKE_POLL_SECONDS, peek: true, signal: runSignal })
+        .wait({ timeoutSeconds: WAKE_POLL_SECONDS, peek: true, where, signal: runSignal })
         .catch(() => []);
       if (runSignal.aborted) return false;
-      if (messages.some((m) => m.from !== agent.id && m.at > since)) return true;
-      if (messages.length) await client.read({ before: since, limit: 1000 }).catch(() => {});
+      if (messages.length) return true;
     }
     return false;
   }
 
-  async function agentLoop(agent, index, client, context) {
+  async function agentLoop(agent, index, client, context, generalId) {
     await delay(index * config.staggerSeconds * 1000, runSignal);
     let next = 'continue',
       lastStarted = run.startedAt,
@@ -388,7 +418,7 @@ export async function runSwarm({
       if (next === 'wait') {
         agent.state = 'waiting';
         await persist();
-        if (!(await wake(agent, client, lastStarted))) return;
+        if (!(await wake(agent, client, lastStarted, generalId))) return;
         onEvent({ event: 'woke', agent: agent.id });
       }
       if (agent.sessions >= config.maxSessions)
@@ -409,7 +439,12 @@ export async function runSwarm({
         signal: runSignal,
         env,
         passEnv: config.passEnv,
+        onLaunch: (pid) => {
+          agent.pid = pid;
+          persist().catch(() => {});
+        },
       });
+      agent.pid = null;
       for (const key of ['inputTokens', 'cachedInputTokens', 'outputTokens'])
         agent.usage[key] += result.usage?.[key] ?? 0;
       agent.usage.costUsd += result.usage?.costUsd ?? 0;
@@ -595,6 +630,7 @@ export async function stopRun(root, reason = 'stopped by the user') {
   return store.update(async (state) => {
     if (!isOpen(state.run)) throw new Error('No run is in progress.');
     if (!alive(state.run.supervisorPid)) {
+      await stopOrphans(state.run.agents);
       await stopStaleServer(state.run.chat?.pid);
       state.run.status = 'stopped';
       state.run.stopReason = `${reason} (the supervisor had already exited)`;

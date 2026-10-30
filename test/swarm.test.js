@@ -175,6 +175,32 @@ test('failing checks wake the waiting swarm until a fix lands', { skip }, async 
   assert.deepEqual(run.result.applied, ['fixed.txt']);
 });
 
+test('plain status posts wake nobody; mentions and direct messages do', { skip }, async (t) => {
+  const root = await gitProject(t, 'model-collab-swarm-');
+  const { session, sessions } = scripted(root, async ({ agent, number, chat }) => {
+    await chat.read();
+    if (agent.id === 'codex-1' && number === 1) {
+      // Give the others time to finish their first session and start waiting.
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await chat.send('#general', 'Pushed the parser; nothing open.');
+      await chat.send('#general', '@claude-1 please review the parser.');
+      await chat.send('claude-2', 'Can you take the docs?');
+    }
+    await chat.read();
+    return { next: 'wait', summary: 'done' };
+  });
+  await runSwarm({
+    root,
+    goal: 'Test waking',
+    overrides: { ...fast, claude: 2, codex: 1 },
+    session,
+  });
+  const count = (id) => sessions.filter((s) => s.agent === id).length;
+  assert.equal(count('claude-1'), 2, 'the mention woke claude-1 once');
+  assert.equal(count('claude-2'), 2, 'the direct message woke claude-2 once');
+  assert.equal(count('codex-1'), 1, 'nobody addressed codex-1');
+});
+
 test(
   'a stop request ends the run without applying, and apply takes the result later',
   { skip },

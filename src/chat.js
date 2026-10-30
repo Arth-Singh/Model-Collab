@@ -55,8 +55,11 @@ function checked(result, args) {
  */
 export async function startServer({ command = 'swarmchat', dataDir, timeoutMs = 20_000 }) {
   await fs.mkdir(dataDir, { recursive: true, mode: 0o700 });
+  // Its own process group: Ctrl-C in the terminal reaches the supervisor, which
+  // shuts the run down in order and stops the server last.
   const child = spawn(command, ['serve', '--data', dataDir, '--port', '0'], {
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
   });
   let stdout = '',
     stderr = '';
@@ -150,10 +153,9 @@ export class ChatClient {
   }
 
   /** Unread messages across all chats by default, oldest first; marks what it returns read. */
-  async read({ chat, thread, last, all, from, mentions, search, before, limit = 50, peek } = {}) {
+  async read({ chat, thread, last, all, from, mentions, search, limit = 50, peek } = {}) {
     const args = ['read', ...(chat ? [chat] : [])];
     if (thread) args.push('--thread', thread);
-    if (before) args.push('--before', before);
     if (last) args.push('--last', String(last));
     if (all) args.push('--all');
     if (from) args.push('--from', from);
@@ -172,13 +174,18 @@ export class ChatClient {
     return (await this.call(args, { input: body }))[0];
   }
 
-  /** Block until something new arrives. Returns [] when the wait times out or `signal` aborts. */
-  async wait({ timeoutSeconds = 60, chat, from, mentions, peek, signal } = {}) {
+  /**
+   * Block until something new arrives. `where` is a SwarmChat filter over the
+   * message `m`; messages it rejects stay unread and do not end the wait.
+   * Returns [] when the wait times out or `signal` aborts.
+   */
+  async wait({ timeoutSeconds = 60, chat, from, mentions, peek, where, signal } = {}) {
     const args = ['wait', '--timeout', String(timeoutSeconds)];
     if (chat) args.push('--chat', chat);
     if (from) args.push('--from', from);
     if (mentions) args.push('--mentions');
     if (peek) args.push('--peek');
+    if (where) args.push('--where', where);
     const result = await this.run(args, { timeoutMs: (timeoutSeconds + 30) * 1000, signal });
     if (result.code === EXIT_WAIT_TIMED_OUT || result.error === 'aborted') return [];
     return checked(result, args);

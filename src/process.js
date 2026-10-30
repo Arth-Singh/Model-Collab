@@ -221,7 +221,7 @@ export function runProcess(command, args = [], options = {}) {
     child.stderr.on('data', collect('stderr'));
     child.on('spawn', () => {
       launched = true;
-      onLaunch?.();
+      onLaunch?.(child.pid);
     });
     child.on('error', (error) => {
       failure = `spawn_error: ${error.message}`;
