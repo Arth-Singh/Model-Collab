@@ -29,13 +29,15 @@ const parseLines = (text) =>
     .map((line) => JSON.parse(line));
 
 /** Run one `swarmchat --json` command. Exit codes other than 0 are returned, not thrown. */
-async function cli(command, args, { env = {}, input, timeoutMs = 30_000 } = {}) {
+async function cli(command, args, { env = {}, input, timeoutMs = 30_000, signal } = {}) {
   const result = await runCommand([command, '--json', ...args], {
     timeoutMs,
     maxBytes: CLI_OUTPUT_BYTES,
     input,
     env: { ...process.env, ...env },
+    signal,
   });
+  if (result.error === 'aborted') return result;
   if (result.error === 'timeout') fail(`swarmchat ${args[0]} did not answer in time.`);
   if (result.error) fail(`Could not run ${command}: ${result.error}. ${INSTALL_HINT}`);
   if (result.truncated) fail(`swarmchat ${args[0]} printed more than the client can read.`);
@@ -148,9 +150,10 @@ export class ChatClient {
   }
 
   /** Unread messages across all chats by default, oldest first; marks what it returns read. */
-  async read({ chat, thread, last, all, from, mentions, search, limit = 50, peek } = {}) {
+  async read({ chat, thread, last, all, from, mentions, search, before, limit = 50, peek } = {}) {
     const args = ['read', ...(chat ? [chat] : [])];
     if (thread) args.push('--thread', thread);
+    if (before) args.push('--before', before);
     if (last) args.push('--last', String(last));
     if (all) args.push('--all');
     if (from) args.push('--from', from);
@@ -169,15 +172,15 @@ export class ChatClient {
     return (await this.call(args, { input: body }))[0];
   }
 
-  /** Block until something new arrives. Returns [] when the wait times out. */
-  async wait({ timeoutSeconds = 60, chat, from, mentions, peek } = {}) {
+  /** Block until something new arrives. Returns [] when the wait times out or `signal` aborts. */
+  async wait({ timeoutSeconds = 60, chat, from, mentions, peek, signal } = {}) {
     const args = ['wait', '--timeout', String(timeoutSeconds)];
     if (chat) args.push('--chat', chat);
     if (from) args.push('--from', from);
     if (mentions) args.push('--mentions');
     if (peek) args.push('--peek');
-    const result = await this.run(args, { timeoutMs: (timeoutSeconds + 30) * 1000 });
-    if (result.code === EXIT_WAIT_TIMED_OUT) return [];
+    const result = await this.run(args, { timeoutMs: (timeoutSeconds + 30) * 1000, signal });
+    if (result.code === EXIT_WAIT_TIMED_OUT || result.error === 'aborted') return [];
     return checked(result, args);
   }
 

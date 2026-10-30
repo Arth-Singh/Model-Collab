@@ -2,61 +2,84 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
-    "schemaVersion": {
-      "default": 1,
-      "type": "number",
-      "const": 1
-    },
     "preset": {
       "default": "coding",
       "type": "string",
       "enum": ["coding", "research"]
     },
-    "participants": {
-      "minItems": 2,
-      "maxItems": 8,
-      "type": "array",
-      "items": {
-        "type": "string",
-        "pattern": "^[a-z][a-z0-9_-]{0,31}$"
-      }
+    "claude": {
+      "default": 9,
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 32
     },
-    "maxRounds": {
+    "codex": {
+      "default": 9,
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 32
+    },
+    "models": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "claude": {
+          "type": "string",
+          "minLength": 1
+        },
+        "codex": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "effort": {
+      "default": "high",
+      "type": "string",
+      "minLength": 1
+    },
+    "deadlineMinutes": {
+      "default": 60,
+      "type": "number",
+      "minimum": 0.1,
+      "maximum": 1440
+    },
+    "sessionMinutes": {
+      "default": 30,
+      "type": "number",
+      "minimum": 0.1,
+      "maximum": 240
+    },
+    "maxSessions": {
+      "default": 40,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500
+    },
+    "quietSeconds": {
+      "default": 30,
+      "type": "number",
+      "minimum": 1,
+      "maximum": 3600
+    },
+    "staggerSeconds": {
+      "default": 3,
+      "type": "number",
+      "minimum": 0,
+      "maximum": 120
+    },
+    "maxCheckRounds": {
       "default": 3,
       "type": "integer",
       "minimum": 1,
-      "maximum": 12
-    },
-    "maxMessages": {
-      "default": 24,
-      "type": "integer",
-      "minimum": 4,
-      "maximum": 100
-    },
-    "deadlineMinutes": {
-      "default": 30,
-      "type": "number",
-      "minimum": 0.01,
-      "maximum": 240
+      "maximum": 10
     },
     "checkTimeoutSeconds": {
       "default": 300,
       "type": "integer",
       "minimum": 1,
       "maximum": 3600
-    },
-    "memory": {
-      "default": true,
-      "type": "boolean"
-    },
-    "dependencyDirs": {
-      "default": ["node_modules", ".venv", "venv"],
-      "maxItems": 20,
-      "type": "array",
-      "items": {
-        "type": "string",
-        "pattern": "^[^/\\\\]+$"
-      }
     },
     "checks": {
       "default": {},
@@ -74,8 +97,36 @@
           "minLength": 1
         }
       }
+    },
+    "memory": {
+      "default": true,
+      "type": "boolean"
+    },
+    "dependencyDirs": {
+      "default": ["node_modules", ".venv", "venv"],
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[^/\\\\]+$"
+      }
+    },
+    "passEnv": {
+      "default": [],
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      }
+    },
+    "chatCommand": {
+      "default": "swarmchat",
+      "type": "string",
+      "minLength": 1
     }
   },
-  "required": ["participants"],
-  "additionalProperties": false
+  "additionalProperties": false,
+  "title": "Model Collab project settings",
+  "description": "The config object in .collab/state.json. Every field is optional; defaults are shown."
 }

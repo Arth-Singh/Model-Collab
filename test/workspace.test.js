@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import {
-  applyCandidate,
+  applyChanges,
   captureBase,
   checkoutCommit,
   cloneForAgent,
@@ -119,7 +119,7 @@ test("the result's changes apply to the user's tree, including deletions and mod
   assert.equal(changes[0].executable, true);
   assert.equal(changes[1].symlink, 'old.js');
 
-  const applied = await applyCandidate(base, { changes }, filesDir);
+  const applied = await applyChanges(base, changes, filesDir);
   assert.deepEqual(applied, ['bin/run.sh', 'src/alias.js', 'src/gone.js', 'src/old.js']);
   assert.equal(await fs.readFile(path.join(root, 'src', 'old.js'), 'utf8'), 'new\n');
   assert.equal(await fs.readlink(path.join(root, 'src', 'alias.js')), 'old.js');

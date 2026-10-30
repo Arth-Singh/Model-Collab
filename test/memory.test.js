@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { Collaboration } from '../src/core.js';
+import { randomUUID } from 'node:crypto';
+import { Store } from '../src/store.js';
 import {
   clearMemory,
   goalRecord,
@@ -16,15 +17,53 @@ import { gitProject } from './helpers.js';
 const memory = (history, knowledge = '- none yet') =>
   `# Project memory\n## User preferences\n- none yet\n## Project knowledge\n${knowledge}\n## Pitfalls\n- none yet\n## Goal history\n${history}\n`;
 
-async function finishedGoals(t, topics, config = {}) {
+let clock = Date.parse('2026-10-30T10:00:00Z');
+function finishedRun(goal, fields = {}) {
+  const createdAt = new Date((clock += 60000)).toISOString();
+  return {
+    kind: 'swarm',
+    id: randomUUID(),
+    goal,
+    criteria: [],
+    status: 'finished',
+    stopReason: 'every agent is waiting and the checks pass',
+    createdAt,
+    endedAt: new Date((clock += 60000)).toISOString(),
+    deadlineAt: createdAt,
+    agents: [
+      {
+        id: 'claude-1',
+        state: 'stopped',
+        sessions: 1,
+        usage: { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, costUsd: 0 },
+        lastSummary: null,
+        retiredReason: null,
+      },
+    ],
+    checkRounds: [],
+    notes: [],
+    result: { commit: 'a'.repeat(40), commits: 1, files: ['x.js'], applied: ['x.js'], error: null },
+    ...fields,
+  };
+}
+
+/** A project whose finished runs are in history, the last one still in state.json. */
+async function finishedGoals(t, goals, config = {}) {
   const root = await gitProject(t, 'model-collab-memory-');
-  const collab = new Collaboration(root);
-  await collab.init(config);
-  for (const topic of topics) {
-    await collab.start({ topic });
-    await collab.stop(`Finished ${topic}`);
+  const store = new Store(root);
+  await store.init(config);
+  await addRuns(store, goals);
+  return { root, store };
+}
+
+async function addRuns(store, goals) {
+  for (const goal of goals) {
+    const { run } = await store.read();
+    await store.archiveRun(run);
+    await store.update((state) => {
+      state.run = finishedRun(goal);
+    });
   }
-  return { root, collab };
 }
 
 test('memory must keep the required headings in order and stay small', () => {
@@ -62,29 +101,45 @@ test('secrets are redacted before memory is stored', () => {
   assert.equal(redactSecrets('token: "a8f3kd92jf83kdl2"'), 'token: "[REDACTED]"');
 });
 
-test('a goal record carries the outcome, messages, user notes, and that goal’s board posts', async (t) => {
-  const root = await gitProject(t, 'model-collab-memory-record-');
-  const collab = new Collaboration(root);
-  await collab.init();
-  await collab.boardPost('user', { channel: 'decisions', text: 'Older decision.' });
-  const { session } = await collab.start({
-    topic: 'Fix the lexer.',
-    successCriteria: ['No regressions.'],
+test('a goal record carries the outcome, team, checks, notes, summaries, and chat', () => {
+  const run = finishedRun('Fix the lexer.', {
+    id: 'run-1',
+    criteria: ['No regressions.'],
+    status: 'stopped',
+    stopReason: 'stopped by the user',
+    notes: [{ at: '2026-10-30T10:00:30Z', text: 'Keep tokens immutable.' }],
+    agents: [
+      { id: 'claude-1', sessions: 3, lastSummary: 'Lexer pushed in abc123.', retiredReason: null },
+      {
+        id: 'codex-1',
+        sessions: 5,
+        lastSummary: null,
+        retiredReason: '5 failed sessions in a row',
+      },
+    ],
+    checkRounds: [
+      {
+        commit: 'b'.repeat(40),
+        results: [{ name: 'test', passed: false, code: 1, error: null, output: '1 failing' }],
+      },
+    ],
+    result: { commit: 'c'.repeat(40), commits: 4, files: ['lexer.js'], applied: null, error: null },
   });
-  await collab.note('Keep tokens immutable.');
-  await collab.boardPost('codex', { channel: 'findings', text: 'Run tests with make test.' });
-  await collab.stop('User stopped.');
-  const state = await collab.status();
-  const record = goalRecord(state.session, await collab.board.posts());
-  assert.match(record, new RegExp(`session ${session.id}`));
+  const record = goalRecord(run, [
+    { chat: '#general', from: 'claude-1', text: 'I take the lexer.' },
+    { chat: 'claude-1,codex-1', from: 'codex-1', text: 'Run tests with make test.' },
+  ]);
+  assert.match(record, /run run-1/);
   assert.match(record, /Fix the lexer\.[\s\S]*No regressions\./);
   assert.match(
     record,
-    /Outcome: stopped \(User stopped\.\)\. Agreed candidate: none\. nothing applied/,
+    /Outcome: stopped \(stopped by the user\)\. 4 commits on the swarm's main; not applied\./,
   );
+  assert.match(record, /codex-1 \(5 sessions, retired: 5 failed sessions in a row\)/);
   assert.match(record, /User notes:\n- Keep tokens immutable\./);
-  assert.match(record, /p2 #findings codex: Run tests with make test\./);
-  assert.doesNotMatch(record, /Older decision/);
+  assert.match(record, /- test: failed \(exit 1\)\n {2}1 failing/);
+  assert.match(record, /- claude-1: Lexer pushed in abc123\./);
+  assert.match(record, /- \[claude-1,codex-1\] codex-1: Run tests with make test\./);
 });
 
 test('finished goals are remembered once, oldest first, and the user’s edits reach the model', async (t) => {
@@ -105,9 +160,7 @@ test('finished goals are remembered once, oldest first, and the user’s edits r
 
   const file = path.join(root, '.collab', 'MEMORY.md');
   await fs.writeFile(file, memory('- Goal two.', '- Deploys need VPN access. [user]'));
-  const collab = new Collaboration(root);
-  await collab.start({ topic: 'Goal three.' });
-  await collab.stop('Done.');
+  await addRuns(new Store(root), ['Goal three.']);
   await updateMemory(root, { call });
   assert.match(
     inputs[2],
@@ -199,13 +252,13 @@ test('invalid model output is rejected and nothing is written', async (t) => {
 });
 
 test('memory can be turned off, backlog beyond three goals is skipped, and clearing keeps history', async (t) => {
-  const { root, collab } = await finishedGoals(t, ['One.', 'Two.', 'Three.', 'Four.', 'Five.']);
-  await collab.configure({ memory: false });
+  const { root, store } = await finishedGoals(t, ['One.', 'Two.', 'Three.', 'Four.', 'Five.']);
+  await store.configure({ memory: false });
   assert.deepEqual(await updateMemory(root, { call: assert.fail }), {
     disabled: true,
     consolidated: [],
   });
-  await collab.configure({ memory: true });
+  await store.configure({ memory: true });
   const seen = [];
   const result = await updateMemory(root, {
     call: async ({ input }) => {
@@ -218,5 +271,6 @@ test('memory can be turned off, backlog beyond three goals is skipped, and clear
   await clearMemory(root);
   await assert.rejects(fs.access(path.join(root, '.collab', 'MEMORY.md')));
   assert.deepEqual(await pendingGoals(root), []);
-  assert.equal((await fs.readdir(path.join(root, '.collab', 'history'))).length, 4);
+  const history = await fs.readdir(path.join(root, '.collab', 'history'));
+  assert.equal(history.filter((name) => name.endsWith('.json')).length, 4);
 });

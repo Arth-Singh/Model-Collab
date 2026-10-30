@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { DEFAULT_EFFORT, DEFAULT_MODELS, runProcess } from './native.js';
+import { DEFAULT_EFFORT, DEFAULT_MODELS, runProcess } from './process.js';
 
 // One agent session: a headless Claude Code or Codex process that works in
 // the agent's clone until it decides to stop, then returns { next, summary }.

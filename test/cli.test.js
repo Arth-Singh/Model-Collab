@@ -3,207 +3,166 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { Collaboration } from '../src/core.js';
 import { runCommand } from '../src/process.js';
 import { gitProject } from './helpers.js';
 
 const cli = fileURLToPath(new URL('../bin/model-collab.js', import.meta.url));
-const message = (kind = 'proposal', extra = {}) => ({
-  clientMessageId: randomUUID(),
-  contextVersion: 0,
-  kind,
-  summary: 'Review the current goal.',
-  evidence: ['Checked the current goal and candidate.'],
-  ...(kind === 'proposal' ? { solution: 'Written answer for the current goal.' } : {}),
-  ...extra,
-});
+const skip =
+  spawnSync('swarmchat', ['--version']).status === 0 ? false : 'swarmchat is not installed';
 
-test('project setup and controls provide readable output while preserving JSON automation', async (t) => {
-  const root = await gitProject(t, 'model-collab-onboarding-');
-  const run = async (...args) => {
-    const result = await runCommand([process.execPath, cli, ...args, '--repo', root], {
-      cwd: root,
-    });
-    assert.equal(result.code, 0, result.stderr);
-    return result.stdout;
-  };
-  await fs.writeFile(path.join(root, 'AGENTS.md'), 'Existing project rules.\n');
-  assert.match(await run('init', '--preset', 'research'), /Research brief: .collab\/RESEARCH.md/);
-  assert.equal(
-    await fs.readFile(path.join(root, 'AGENTS.md'), 'utf8'),
-    'Existing project rules.\n',
-  );
-  assert.match(await run('configure'), /Linked dependency directories: node_modules, .venv, venv/);
-  const changed = JSON.parse(
-    await run(
-      'configure',
-      '--minutes',
-      '45',
-      '--max-rounds',
-      '6',
-      '--dependency-dirs',
-      'node_modules,target',
-      '--json',
-    ),
-  );
-  assert.equal(changed.deadlineMinutes, 45);
-  assert.equal(changed.maxRounds, 6);
-  assert.deepEqual(changed.dependencyDirs, ['node_modules', 'target']);
-  assert.match(await run('start', 'Inspect the project.'), /Goal: Inspect the project/);
-  assert.match(
-    await run('board', 'post', '--channel', 'decisions', 'Keep the public API.'),
-    /Posted p1 in #decisions/,
-  );
-  assert.match(
-    await run('board', 'post', '--agent', 'codex', '--thread', 'p1', 'parse_all is public.'),
-    /Posted p2 in #decisions/,
-  );
-  assert.match(
-    await run('board', 'search', 'public'),
-    /p2 · #decisions · codex[^]*p1 · #decisions · user/,
-  );
-  assert.doesNotMatch(await run('board', 'search', '--agent', 'claude'), /codex/);
-  assert.match(await run('board', 'read', 'p1'), /Keep the public API[^]*reply in p1/);
-  assert.match(await run('board', 'threads'), /1 reply/);
-  assert.match(await run('status', '--human'), /Board: 2 posts in decisions/);
-  const denied = await runCommand([
-    process.execPath,
-    cli,
-    'configure',
-    '--minutes',
-    '30',
-    '--repo',
-    root,
-  ]);
-  assert.notEqual(denied.code, 0);
-  assert.match(denied.stderr, /Stop the current/);
-  assert.match(await run('status', '--human'), /Status: active/);
-  assert.equal(JSON.parse(await run('status')).session.status, 'active');
-  assert.match(await run('pause'), /Collaboration paused/);
-  const note = JSON.parse(await run('note', 'Keep the public API.', '--json'));
-  assert.equal(note.session.contextVersion, 1);
-  assert.match(await run('resume'), /Collaboration resumed/);
-  assert.match(await run('stop'), /Collaboration stopped/);
-  assert.equal(JSON.parse(await run('configure', '--preset', 'coding', '--json')).preset, 'coding');
-});
-
-async function fixture(t) {
-  const root = await gitProject(t, 'model-collab-cli-');
-  const collab = new Collaboration(root);
-  await collab.init();
-  const state = await collab.start({ topic: 'Goal A' });
-  const post = (body, sessionId = state.session.id) =>
-    runCommand(
-      [
-        process.execPath,
-        cli,
-        'post',
-        '--repo',
-        root,
-        '--agent',
-        'codex',
-        ...(sessionId === null ? [] : ['--session', sessionId]),
-        '--json',
-        '-',
-      ],
-      { cwd: root, input: JSON.stringify(body) },
-    );
-  return { collab, sessionId: state.session.id, post };
-}
-
-test('CLI post requires a nonempty, valid observed session ID without mutating state', async (t) => {
-  const { collab, post } = await fixture(t);
-  const before = await fs.readFile(collab.file, 'utf8');
-  for (const sessionId of [null, '', 'not-a-session-id']) {
-    const result = await post(message(), sessionId);
-    assert.notEqual(result.code, 0, `Accepted invalid session ID: ${sessionId}`);
-    assert.match(result.stderr, /session|UUID/i);
-    assert.equal(await fs.readFile(collab.file, 'utf8'), before);
+// Stand-ins for the agent CLIs: each session commits a file named after the
+// agent, pushes it to main, and asks to wait.
+const FAKE_AGENT = `#!/usr/bin/env node
+const { execFileSync } = require('node:child_process');
+const fs = require('node:fs');
+const backend = require('node:path').basename(process.argv[1]);
+let prompt = '';
+process.stdin.on('data', (chunk) => (prompt += chunk));
+process.stdin.on('end', () => {
+  const id = prompt.match(/You are ([a-z0-9-]+),/)[1];
+  if (process.env.OPENAI_API_KEY || process.env.GITHUB_TOKEN) throw new Error('secret leaked');
+  const git = (...args) => execFileSync('git', args, { stdio: 'pipe' });
+  fs.writeFileSync(id + '.txt', id + '\\n');
+  git('add', '-A');
+  git('commit', '-q', '-m', 'Add ' + id);
+  for (let i = 0; ; i++) {
+    try {
+      git('pull', '-q');
+      git('push', '-q', 'origin', 'HEAD:main');
+      break;
+    } catch (error) {
+      if (i > 10) throw error;
+    }
+  }
+  const answer = { next: 'wait', summary: id + ' pushed ' + id + '.txt' };
+  if (backend === 'codex') {
+    const file = process.argv[process.argv.indexOf('--output-last-message') + 1];
+    fs.writeFileSync(file, JSON.stringify(answer));
+    console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 40, cached_input_tokens: 0, output_tokens: 4 } }));
+  } else {
+    console.log(JSON.stringify({ is_error: false, structured_output: answer, usage: { input_tokens: 30, output_tokens: 3 }, total_cost_usd: 0.001 }));
   }
 });
+`;
 
-test('CLI posts with the observed session remain retry-safe', async (t) => {
-  const { collab, post } = await fixture(t);
-  const body = message();
-  const first = await post(body);
-  assert.equal(first.code, 0, first.stderr);
-  const original = JSON.parse(first.stdout);
-  const before = await fs.readFile(collab.file, 'utf8');
-  const retry = await post(body);
-  assert.equal(retry.code, 0, retry.stderr);
-  assert.equal(JSON.parse(retry.stdout).duplicate, true);
-  assert.deepEqual(JSON.parse(retry.stdout).message, original.message);
-  assert.equal(await fs.readFile(collab.file, 'utf8'), before);
-  const conflict = await post({ ...body, summary: 'Different content under the same retry ID.' });
-  assert.notEqual(conflict.code, 0);
-  assert.match(conflict.stderr, /different content/);
-  assert.equal(await fs.readFile(collab.file, 'utf8'), before);
+async function fakeAgents(t) {
+  const bin = await fs.mkdtemp(path.join(os.tmpdir(), 'model-collab-fake-cli-'));
+  t.after(() => fs.rm(bin, { recursive: true, force: true }));
+  for (const name of ['claude', 'codex']) {
+    await fs.writeFile(path.join(bin, name), FAKE_AGENT, { mode: 0o755 });
+  }
+  return bin;
+}
+
+function cliRunner(root, env = process.env) {
+  return async (...args) => {
+    const result = await runCommand([process.execPath, cli, ...args, '--repo', root], {
+      cwd: root,
+      env,
+      timeoutMs: 120000,
+      maxBytes: 1_000_000,
+    });
+    return { ...result, ok: result.code === 0 };
+  };
+}
+
+test('settings are created, changed, and shown without starting agents', async (t) => {
+  const root = await gitProject(t, 'model-collab-cli-');
+  const run = cliRunner(root);
+  const init = await run('init', '--agents', '5', '--minutes', '45');
+  assert.ok(init.ok, init.stderr);
+  assert.match(init.stdout, /Swarm: 3 Claude Code \(claude-opus-5-5\) \+ 2 Codex \(gpt-6-astra\)/);
+  assert.match(init.stdout, /45 minutes per run/);
+  assert.match(await fs.readFile(path.join(root, '.gitignore'), 'utf8'), /^\.collab\/$/m);
+  await fs.access(path.join(root, '.collab', 'CONTEXT.md'));
+  assert.match((await run('init')).stderr, /Already initialized/);
+
+  const changed = JSON.parse(
+    (
+      await run(
+        'configure',
+        '--codex',
+        '0',
+        '--claude-model',
+        'claude-test',
+        '--checks',
+        '{"test":["npm","test"]}',
+        '--pass-env',
+        'CARGO_NET_OFFLINE',
+        '--json',
+      )
+    ).stdout,
+  );
+  assert.equal(changed.claude, 3);
+  assert.equal(changed.codex, 0);
+  assert.deepEqual(changed.models, { claude: 'claude-test' });
+  assert.deepEqual(changed.checks, { test: ['npm', 'test'] });
+  assert.deepEqual(changed.passEnv, ['CARGO_NET_OFFLINE']);
+  const invalid = await run('configure', '--claude', '0');
+  assert.equal(invalid.ok, false);
+  assert.match(invalid.stderr, /at least one agent/);
+  assert.match((await run('status')).stdout, /No run yet/);
+  assert.match((await run('note', 'hello')).stderr, /No run is in progress/);
+  assert.match((await run('stop')).stderr, /No run is in progress/);
 });
 
-test('CLI rejects a stale proposal when the replacement goal has the same context version', async (t) => {
-  const { collab, sessionId, post } = await fixture(t);
-  const stale = message();
-  await collab.stop('Replace the goal.');
-  const replacement = await collab.start({ topic: 'Goal B' });
-  assert.notEqual(replacement.session.id, sessionId);
-  assert.equal(replacement.session.contextVersion, stale.contextVersion);
-  const before = await fs.readFile(collab.file, 'utf8');
-  const rejected = await post(stale);
-  assert.notEqual(rejected.code, 0);
-  assert.match(rejected.stderr, /Active session changed/);
-  assert.equal(await fs.readFile(collab.file, 'utf8'), before);
-  const accepted = await post(stale, replacement.session.id);
-  assert.equal(accepted.code, 0, accepted.stderr);
-});
+test('up runs a swarm of real processes to a finished, applied result', { skip }, async (t) => {
+  const root = await gitProject(t, 'model-collab-cli-up-');
+  const bin = await fakeAgents(t);
+  const env = {
+    ...process.env,
+    PATH: `${bin}${path.delimiter}${process.env.PATH}`,
+    OPENAI_API_KEY: 'sk-must-not-reach-agents',
+    GITHUB_TOKEN: 'ghp_must_not_reach_agents',
+  };
+  const run = cliRunner(root, env);
+  const up = await run(
+    'up',
+    'Each agent adds a file named after itself',
+    '--claude',
+    '2',
+    '--codex',
+    '1',
+    '--quiet-seconds',
+    '1',
+    '--stagger-seconds',
+    '0',
+    '--checks',
+    '{"three":["sh","-c","test -f claude-1.txt && test -f claude-2.txt && test -f codex-1.txt"]}',
+    '--no-memory',
+    '--json',
+  );
+  assert.ok(up.ok, `${up.stderr}\n${up.stdout.slice(-2000)}`);
+  const events = up.stdout
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line));
+  assert.equal(events[0].event, 'started');
+  assert.deepEqual(
+    events[0].agents.map((a) => a.id),
+    ['claude-1', 'codex-1', 'claude-2'],
+  );
+  const result = events.find((e) => e.event === 'result').run;
+  assert.equal(result.status, 'finished', result.stopReason);
+  assert.deepEqual(result.result.applied, ['claude-1.txt', 'claude-2.txt', 'codex-1.txt']);
+  assert.equal(await fs.readFile(path.join(root, 'codex-1.txt'), 'utf8'), 'codex-1\n');
+  const codex = result.agents.find((a) => a.id === 'codex-1');
+  assert.deepEqual(
+    [codex.usage.inputTokens, codex.usage.outputTokens, codex.lastSummary],
+    [40, 4, 'codex-1 pushed codex-1.txt'],
+  );
+  assert.equal(result.agents.find((a) => a.id === 'claude-1').usage.costUsd, 0.001);
 
-test('CLI rejects a stale acceptance despite reused candidate IDs and allows a current vote', async (t) => {
-  const { collab, post } = await fixture(t);
-  const old = await collab.post('codex', message());
-  await collab.post('claude', message());
-  const staleVote = message('accept', { candidate: old.message.id });
-  await collab.stop('Replace the goal before the prepared vote arrives.');
-  const replacement = await collab.start({ topic: 'Goal B' });
-  const current = await collab.post('codex', message());
-  await collab.post('claude', message());
-  assert.equal(old.message.id, current.message.id);
-  const before = await fs.readFile(collab.file, 'utf8');
-  const rejected = await post(staleVote);
-  assert.notEqual(rejected.code, 0);
-  assert.match(rejected.stderr, /Active session changed/);
-  assert.equal(await fs.readFile(collab.file, 'utf8'), before);
-  const currentVote = message('accept', { candidate: current.message.id });
-  const accepted = await post(currentVote, replacement.session.id);
-  assert.equal(accepted.code, 0, accepted.stderr);
-  const final = await collab.post('claude', message('accept', { candidate: current.message.id }));
-  assert.equal(final.status, 'converged');
-  const retry = await post(currentVote, replacement.session.id);
-  assert.equal(retry.code, 0, retry.stderr);
-  assert.equal(JSON.parse(retry.stdout).duplicate, true);
-});
-
-test('CLI diff, checkout and apply let a person review and apply candidates', async (t) => {
-  const { collab } = await fixture(t);
-  const root = collab.root;
-  const cliRun = (...args) =>
-    runCommand([process.execPath, cli, ...args, '--repo', root], { cwd: root });
-  const codex = (await collab.status('codex')).session.workspace;
-  await fs.writeFile(path.join(codex, 'README.md'), 'Codex answer\n');
-  const candidate = (await collab.post('codex', message())).message.id;
-  await collab.post('claude', message());
-  const diff = await cliRun('diff', '--agent', 'claude', '--candidate', candidate);
-  assert.equal(diff.code, 0, diff.stderr);
-  assert.match(diff.stdout, /-Project\n\+Codex answer/);
-  const checkout = await cliRun('checkout', '--agent', 'claude', '--candidate', candidate);
-  const copy = JSON.parse(checkout.stdout).path;
-  assert.equal(await fs.readFile(path.join(copy, 'README.md'), 'utf8'), 'Codex answer\n');
-  const early = await cliRun('apply', '--candidate', candidate);
-  assert.notEqual(early.code, 0);
-  assert.match(early.stderr, /Stop the collaboration/);
-  await collab.stop('Pick the alternative manually.');
-  const applied = await cliRun('apply', '--candidate', candidate);
-  assert.equal(applied.code, 0, applied.stderr);
-  assert.match(applied.stdout, /Applied m1: README.md/);
-  assert.equal(await fs.readFile(path.join(root, 'README.md'), 'utf8'), 'Codex answer\n');
+  const status = await run('status');
+  assert.match(status.stdout, /finished/);
+  assert.match(
+    status.stdout,
+    /Applied to your working tree: claude-1.txt, claude-2.txt, codex-1.txt/,
+  );
+  const transcript = await run('transcript');
+  assert.match(transcript.stdout, /#general user: Goal \(run /);
+  assert.match(transcript.stdout, /#general model-collab: Run finished/);
+  assert.match((await run('apply')).stdout, /no file changes/);
 });

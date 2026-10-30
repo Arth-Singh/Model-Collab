@@ -1,230 +1,107 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { Collaboration } from '../src/core.js';
+import { runSwarm } from '../src/swarm.js';
 import { gitProject } from './helpers.js';
 
-const cli = fileURLToPath(new URL('../bin/model-collab.js', import.meta.url));
-const decoded = (result) => {
+const skip =
+  spawnSync('swarmchat', ['--version']).status === 0 ? false : 'swarmchat is not installed';
+
+async function connect(mcp) {
+  const client = new Client({ name: 'test-agent', version: '1.0.0' });
+  await client.connect(
+    new StdioClientTransport({ command: mcp.command, args: mcp.args, stderr: 'pipe' }),
+  );
+  return client;
+}
+
+const call = async (client, name, args = {}) => {
+  const result = await client.callTool({ name, arguments: args });
   assert.equal(result.isError, undefined, result.content[0]?.text);
   return JSON.parse(result.content[0].text);
 };
 
-test('two real MCP clients exchange sealed proposals and converge with fixed participant identities', async (t) => {
+test('agents reach the chat and the run through their own MCP servers', { skip }, async (t) => {
   const root = await gitProject(t, 'model-collab-mcp-');
-  const clients = [];
-  t.after(() => Promise.all(clients.map((client) => client.close())));
-  await new Collaboration(root).init();
-  for (const agent of ['codex', 'claude']) {
-    const client = new Client({ name: `test-${agent}`, version: '1.0.0' });
-    clients.push(client);
-    await client.connect(
-      new StdioClientTransport({
-        command: process.execPath,
-        args: [cli, 'serve', '--repo', root, '--agent', agent],
-        stderr: 'pipe',
-      }),
-    );
-    assert.match(client.getInstructions(), new RegExp(`equal peer ${agent}`));
-  }
-  const [codex, claude] = clients;
-  const tools = (await codex.listTools()).tools.map((tool) => tool.name);
-  assert.deepEqual(tools.sort(), [
-    'collab_board_post',
-    'collab_board_read_post',
-    'collab_board_read_thread',
-    'collab_board_search',
-    'collab_board_threads',
-    'collab_checkout',
-    'collab_diff',
-    'collab_post',
-    'collab_start',
-    'collab_status',
-    'collab_stop',
-    'collab_verify',
-    'collab_wait',
-  ]);
-  const started = decoded(
-    await claude.callTool({
-      name: 'collab_start',
-      arguments: { topic: 'Agree on half-open interval overlap' },
-    }),
-  );
-  const sessionId = started.session.id;
-  const first = decoded(
-    await codex.callTool({
-      name: 'collab_post',
-      arguments: {
-        sessionId,
-        clientMessageId: 'mcp-codex-proposal',
-        kind: 'proposal',
-        summary: 'Use strict inequality',
-        evidence: ['Adjacent intervals share no included point.'],
-        solution: 'max(start) < min(end)',
-      },
-    }),
-  );
-  const posted = decoded(
-    await codex.callTool({
-      name: 'collab_board_post',
-      arguments: { channel: 'findings', text: 'Adjacent intervals share an endpoint only.' },
-    }),
-  );
-  assert.equal(posted.post.author, 'codex');
-  const sealed = decoded(await claude.callTool({ name: 'collab_status', arguments: {} }));
-  assert.deepEqual(sealed.session.messages, []);
-  assert.deepEqual(sealed.session.candidates, []);
-  assert.equal(sealed.board.posts, 0);
-  const rejected = await codex.callTool({
-    name: 'collab_post',
-    arguments: {
-      sessionId,
-      clientMessageId: 'mcp-codex-too-early',
-      kind: 'evidence',
-      summary: 'Duplicate contribution',
-      evidence: ['No new peer contribution.'],
+  const seen = {};
+  const session = async ({ agent, mcp }) => {
+    const client = await connect(mcp);
+    try {
+      if (agent.id === 'claude-1' && agent.sessions === 1) {
+        const tools = (await client.listTools()).tools.map((tool) => tool.name).sort();
+        seen.tools = tools;
+        seen.instructions = client.getInstructions();
+        await call(client, 'chat_read');
+        await call(client, 'chat_channel', {
+          action: 'create',
+          name: 'parser',
+          members: ['codex-1'],
+        });
+        await call(client, 'chat_send', { to: 'codex-1', text: 'Take the parser, @codex-1.' });
+        seen.status = await call(client, 'swarm_status');
+        seen.check = await call(client, 'swarm_check', { check: 'readme' });
+        const missing = await client.callTool({
+          name: 'swarm_check',
+          arguments: { check: 'nope' },
+        });
+        seen.missingCheck = missing.content[0].text;
+      }
+      if (agent.id === 'codex-1') {
+        // The direct message may arrive after this agent's first session starts.
+        const messages = await call(client, 'chat_wait', { timeoutSeconds: 20, from: 'claude-1' });
+        seen.received ??= messages;
+        seen.chats ??= await call(client, 'chat_chats');
+      }
+      await call(client, 'chat_read');
+      return {
+        next: 'wait',
+        summary: 'done',
+        usage: { inputTokens: 1, cachedInputTokens: 0, outputTokens: 1, costUsd: 0 },
+        wallMs: 1,
+      };
+    } finally {
+      await client.close();
+    }
+  };
+  const run = await runSwarm({
+    root,
+    goal: 'Exercise the tools',
+    overrides: {
+      claude: 1,
+      codex: 1,
+      quietSeconds: 1,
+      staggerSeconds: 0,
+      deadlineMinutes: 2,
+      memory: false,
+      checks: { readme: ['test', '-f', 'README.md'] },
     },
+    session,
   });
-  assert.equal(rejected.isError, true);
-  assert.match(rejected.content[0].text, /already contributed/);
-  decoded(
-    await claude.callTool({
-      name: 'collab_post',
-      arguments: {
-        sessionId,
-        clientMessageId: 'mcp-claude-proposal',
-        kind: 'proposal',
-        summary: 'Use nonempty intersection',
-        evidence: ['[1,2) intersects [2,3) in the empty set.'],
-        solution: 'The intersection [max(start), min(end)) is nonempty.',
-      },
-    }),
-  );
-  const found = decoded(
-    await claude.callTool({ name: 'collab_board_search', arguments: { query: 'endpoint' } }),
-  );
+  assert.equal(run.status, 'finished', run.stopReason);
+  assert.deepEqual(seen.tools, [
+    'chat_channel',
+    'chat_chats',
+    'chat_read',
+    'chat_send',
+    'chat_wait',
+    'swarm_check',
+    'swarm_status',
+  ]);
+  assert.match(seen.instructions, /You are claude-1/);
+  assert.equal(seen.status.you.id, 'claude-1');
+  assert.equal(seen.status.goal, 'Exercise the tools');
   assert.deepEqual(
-    found.results.map((post) => [post.id, post.author]),
-    [[posted.post.id, 'codex']],
+    seen.status.teammates.map((a) => a.id),
+    ['codex-1'],
   );
-  const shared = decoded(await codex.callTool({ name: 'collab_status', arguments: {} }));
+  assert.deepEqual(seen.status.checks, { readme: 'test -f README.md' });
+  assert.equal(seen.check.passed, true);
+  assert.match(seen.missingCheck, /No check named nope/);
   assert.deepEqual(
-    shared.session.messages.map((message) => message.agent),
-    ['codex', 'claude'],
+    seen.received.map((m) => [m.chat, m.from, m.text]),
+    [['claude-1,codex-1', 'claude-1', 'Take the parser, @codex-1.']],
   );
-  const review = decoded(
-    await claude.callTool({ name: 'collab_checkout', arguments: { candidate: first.message.id } }),
-  );
-  assert.ok(review.path.startsWith(path.join(root, '.collab', 'review', 'claude')));
-  decoded(
-    await claude.callTool({
-      name: 'collab_post',
-      arguments: {
-        sessionId,
-        clientMessageId: 'mcp-claude-acceptance',
-        kind: 'accept',
-        candidate: first.message.id,
-        summary: 'Boundary examples agree',
-        evidence: ['[1,2) and [2,3) do not overlap under strict inequality.'],
-      },
-    }),
-  );
-  const final = decoded(await claude.callTool({ name: 'collab_status', arguments: {} }));
-  assert.equal(final.session.status, 'converged');
-  assert.equal(final.session.winner, first.message.id);
-  assert.deepEqual(final.session.votes, { codex: first.message.id, claude: first.message.id });
-});
-
-test('MCP requires an observed session ID and rejects stale proposals and votes after replacement', async (t) => {
-  const root = await gitProject(t, 'model-collab-mcp-session-');
-  const collab = new Collaboration(root);
-  const client = new Client({ name: 'test-session-binding', version: '1.0.0' });
-  t.after(() => client.close());
-  await collab.init();
-  const started = await collab.start({ topic: 'Goal A' });
-  const sessionId = started.session.id;
-  await client.connect(
-    new StdioClientTransport({
-      command: process.execPath,
-      args: [cli, 'serve', '--repo', root, '--agent', 'codex'],
-      stderr: 'pipe',
-    }),
-  );
-  const schema = (await client.listTools()).tools.find(
-    (tool) => tool.name === 'collab_post',
-  ).inputSchema;
-  assert.ok(schema.required.includes('sessionId'));
-  const body = {
-    clientMessageId: 'mcp-session-proposal',
-    contextVersion: 0,
-    kind: 'proposal',
-    summary: 'A candidate for the observed goal.',
-    evidence: ['Reviewed that goal.'],
-    solution: 'Written answer for the observed goal.',
-  };
-  const post = (args) => client.callTool({ name: 'collab_post', arguments: args });
-  const beforeInvalid = await fs.readFile(collab.file, 'utf8');
-  for (const args of [
-    body,
-    { ...body, sessionId: '' },
-    { ...body, sessionId: 'not-a-session-id' },
-  ]) {
-    const rejected = await post(args);
-    assert.equal(rejected.isError, true);
-    assert.match(rejected.content[0].text, /sessionId|UUID/i);
-    assert.equal(await fs.readFile(collab.file, 'utf8'), beforeInvalid);
-  }
-  const original = decoded(await post({ ...body, sessionId }));
-  const beforeRetry = await fs.readFile(collab.file, 'utf8');
-  const retry = decoded(await post({ ...body, sessionId }));
-  assert.equal(retry.duplicate, true);
-  assert.deepEqual(retry.message, original.message);
-  assert.equal(await fs.readFile(collab.file, 'utf8'), beforeRetry);
-  await collab.post('claude', { ...body, clientMessageId: 'mcp-session-peer-a' });
-  const staleVote = {
-    clientMessageId: 'mcp-session-old-vote',
-    contextVersion: 0,
-    kind: 'accept',
-    candidate: original.message.id,
-    summary: 'Accept the reviewed candidate.',
-    evidence: ['Reviewed the candidate in goal A.'],
-  };
-  await collab.stop('Replace the goal.');
-  const replacement = await collab.start({ topic: 'Goal B' });
-  assert.notEqual(replacement.session.id, sessionId);
-  assert.equal(replacement.session.contextVersion, body.contextVersion);
-  const beforeStale = await fs.readFile(collab.file, 'utf8');
-  const staleProposal = await post({ ...body, sessionId });
-  assert.equal(staleProposal.isError, true);
-  assert.match(staleProposal.content[0].text, /Active session changed/);
-  assert.equal(await fs.readFile(collab.file, 'utf8'), beforeStale);
-  const current = decoded(await post({ ...body, sessionId: replacement.session.id }));
-  assert.equal(current.message.id, original.message.id);
-  await collab.post('claude', { ...body, clientMessageId: 'mcp-session-peer-b' });
-  const beforeVote = await fs.readFile(collab.file, 'utf8');
-  for (const stale of [body, staleVote]) {
-    const rejected = await post({ ...stale, sessionId });
-    assert.equal(rejected.isError, true);
-    assert.match(rejected.content[0].text, /Active session changed/);
-    assert.equal(await fs.readFile(collab.file, 'utf8'), beforeVote);
-  }
-  const currentVote = {
-    ...staleVote,
-    clientMessageId: 'mcp-session-new-vote',
-    evidence: ['Independently reviewed the candidate in goal B.'],
-    sessionId: replacement.session.id,
-  };
-  decoded(await post(currentVote));
-  const final = await collab.post('claude', {
-    ...staleVote,
-    clientMessageId: 'mcp-session-peer-vote',
-    evidence: ['Reviewed the candidate in goal B.'],
-  });
-  assert.equal(final.status, 'converged');
-  assert.equal(decoded(await post(currentVote)).duplicate, true);
+  assert.ok(seen.chats.some((c) => c.title === '#parser'));
 });

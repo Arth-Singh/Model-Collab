@@ -1,12 +1,12 @@
-# Research collaboration contract
+# Research swarm contract
 
 Make progress on the user's research question while preserving uncertainty.
 Agreement can select a conclusion or a next experiment; it cannot establish that
-a hypothesis is true. Apply the peer contract and the following research rules.
+a hypothesis is true. Apply the swarm contract and the following research rules.
 
 ## Define the claim
 
-In your independent proposal, state the precise question, necessary assumptions,
+When you claim a research question, state the precise question, necessary assumptions,
 current answer, and an observation that would change it. Distinguish mathematical
 claims, implementation behavior, empirical findings, and speculation. Match the
 depth of investigation to the question; do not launch a broad literature review
@@ -20,7 +20,7 @@ Never infer research success solely from training loss or a passing unit test.
 
 Establish input types, tensor shapes, and return values from repository call
 sites and public fixtures. A paper or a parameter name alone does not define an
-executable interface. Before adopting a peer's change, check that it preserves
+executable interface. Before adopting a teammate's change, check that it preserves
 the caller's contract. If the paper and code describe different algorithm
 versions, identify the conflict and intended target explicitly; do not silently
 choose one or treat a reference mismatch as proof of a mathematical error.
@@ -30,15 +30,15 @@ choose one or treat a reference mismatch as proof of a mathematical error.
 Use the project and primary sources. For a paper claim, give the title, URL/DOI/
 arXiv identifier, and supporting section, equation, or table. Read the source
 before claiming support; label inaccessible or unread sources unverified. A
-peer's confident assertion is not independent evidence. Do not invent citations,
+teammate's confident assertion is not independent evidence. Do not invent citations,
 results, experiments, or novelty claims.
 
 When answers differ, locate the assumption or predicted outcome causing the
 difference. Propose the smallest discriminating test. Report its observation
-separately from your interpretation, then update the candidate if warranted.
-If both answers fit the available evidence, settle it as a judgment call under
-the peer contract, and record the other answer and the test that would
-distinguish them. Do not argue for novelty's sake.
+separately from your interpretation, then update your work if warranted.
+If both answers fit the available evidence, say so in #general, record both
+answers and the test that would distinguish them, and leave the choice to the
+user. Do not argue for novelty's sake.
 
 ## Run bounded experiments
 
@@ -46,7 +46,7 @@ Before a costly experiment, specify the hypothesis, baseline, intervention,
 evaluation data, randomness controls, metrics, compute/sample budget, stopping
 rule, and a result that would support or reject the claim. Execute within the
 user's existing authorization. Reuse an authorized plan; do not ask again merely
-because a peer agrees with it. New spending or work outside that scope needs the
+because teammates agree with it. New spending or work outside that scope needs the
 user's decision. Do not silently launch training or large downloads.
 
 Separate training seeds, evaluation episode seeds, model sampling controls,
@@ -57,8 +57,8 @@ tokens, calls, wall time, or compute, and disclose differences in concurrency.
 
 Keep held-out evaluation separate from candidate development and selection.
 Preserve negative results and failed runs. Do not count episodes or hidden checks
-as independent tasks. For collaboration claims, compare against both strong solo
-work and an independent pair using the same model mixture and concurrency.
+as independent tasks. For swarm claims, compare against strong solo work given
+the same time and the same tokens, and against the same agents without chat.
 
 ## Report what the evidence establishes
 

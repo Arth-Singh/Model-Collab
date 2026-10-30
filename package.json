@@ -1,7 +1,7 @@
 {
   "name": "@arth-singh/model-collab",
-  "version": "0.4.0",
-  "description": "Codex and Claude Code solve independently, cross-examine each other's work, and ship one agreed change",
+  "version": "0.5.0",
+  "description": "A swarm of Claude Code and Codex agents that divide a goal among themselves over a shared chat and integrate it on one Git branch",
   "type": "module",
   "bin": {
     "model-collab": "bin/model-collab.js"
@@ -53,11 +53,11 @@
     "codex",
     "claude-code",
     "multi-agent",
+    "agent-swarm",
+    "swarmchat",
     "mcp",
-    "code-review",
     "llm",
-    "agents",
-    "pair-programming"
+    "agents"
   ],
   "author": "Arth Singh"
 }

@@ -6,8 +6,9 @@ import path from 'node:path';
 import { doctor, renderDoctor } from '../src/doctor.js';
 
 const HELP = {
-  'codex exec --help': 'Options:\n  --ignore-rules\n  --output-schema <FILE>\n',
-  'claude --help': 'Options:\n  --permission-prompts\n  --safe-mode\n  --json-schema <schema>\n',
+  'codex exec --help': 'Options:\n  --ignore-rules\n  --output-schema <FILE>\n  --add-dir <DIR>\n',
+  'claude --help':
+    'Options:\n  --permission-prompts\n  --safe-mode\n  --json-schema <schema>\n  --add-dir <dirs...>\n',
 };
 
 function fakeTools(overrides = {}) {
@@ -37,7 +38,7 @@ test('doctor checks requirements without changing the project or starting model 
     'codex exec --help',
     'git --version',
     `git -C ${await fs.realpath(root)} rev-parse --show-toplevel`,
-    'tmux -V',
+    'swarmchat --version',
   ]);
   assert.deepEqual(await fs.readdir(root), []);
   assert.match(renderDoctor(result), /Ready to start/);
@@ -52,7 +53,7 @@ test('doctor reports missing tools and directories with a useful next action', a
   assert.equal(result.ok, false);
   assert.equal(result.checks.filter((check) => !check.ok).length, 5);
   assert.match(renderDoctor(result), /Install Git/);
-  assert.match(renderDoctor(result), /Install tmux/);
+  assert.match(renderDoctor(result), /Install SwarmChat/);
   assert.match(renderDoctor(result), /Directory not found/);
 });
 
@@ -60,7 +61,11 @@ test('doctor names worker flags an outdated CLI lacks and a folder outside Git',
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'model-collab-doctor-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const { run } = fakeTools({
-    'codex exec --help': { code: 0, stdout: 'Options:\n  --output-schema <FILE>\n', stderr: '' },
+    'codex exec --help': {
+      code: 0,
+      stdout: 'Options:\n  --output-schema <FILE>\n  --add-dir <DIR>\n',
+      stderr: '',
+    },
     [`git -C ${await fs.realpath(root)} rev-parse --show-toplevel`]: {
       code: 128,
       stdout: '',

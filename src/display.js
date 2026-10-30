@@ -1,108 +1,107 @@
-const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
+// Terminal output for runs: one line per event while a run is supervised, and
+// a summary for `model-collab status`.
 
-export function renderStartup(result, goal) {
-  if (result.status === 'paused') {
-    return `Collaboration is paused.\nProject: ${result.root}\nRun model-collab resume when you are ready to continue.`;
+const clock = () => new Date().toTimeString().slice(0, 8);
+const oneLine = (text, max = 160) => {
+  const flat = String(text ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+};
+const tokens = (usage) =>
+  usage ? `${Math.round((usage.inputTokens + usage.outputTokens) / 1000)}k tokens` : '';
+
+export function renderEvent(event) {
+  const line = (text) => `${clock()} ${text}`;
+  switch (event.event) {
+    case 'started':
+      return [
+        line(`Run ${event.runId} started with ${event.agents.length} agents.`),
+        `  ${event.agents.map((a) => a.id).join(', ')}`,
+        `  Deadline ${event.deadlineAt}. Watch the chat: model-collab view`,
+      ].join('\n');
+    case 'session':
+      return line(`${event.agent} starts session ${event.number}`);
+    case 'ended':
+      return line(
+        `${event.agent} ${event.timedOut ? 'hit the session time limit' : `→ ${event.next}`} (${Math.round(event.wallMs / 1000)}s, ${tokens(event.usage)}): ${oneLine(event.summary)}`,
+      );
+    case 'woke':
+      return line(`${event.agent} woke for a new message`);
+    case 'failed':
+      return line(
+        `${event.agent} session failed (${event.kind}): ${oneLine(event.message, 200)}. Retrying in ${event.retryInSeconds}s.`,
+      );
+    case 'retired':
+      return line(`${event.agent} retired: ${event.reason}`);
+    case 'push':
+      return line(`main ${event.commit.slice(0, 8)} ${event.author}: ${oneLine(event.subject)}`);
+    case 'chat':
+      return line(`#general ${event.from}: ${oneLine(event.text)}`);
+    case 'checks':
+      return line(
+        `checks on ${event.commit.slice(0, 8)}: ${event.results.map((r) => `${r.name} ${r.passed ? 'passed' : 'failed'}`).join(', ') || 'none configured'}`,
+      );
+    case 'complete':
+      return line(`Run ${event.status}: ${event.reason}`);
+    case 'memory':
+      return line(event.message);
+    default:
+      return null;
   }
-  if (result.ui === 'workers') {
-    return [
-      `Collaboration ${result.status}${result.reason ? `: ${result.reason}` : '.'}`,
-      ...result.peers.map(
-        (peer, index) => `${['codex', 'claude'][index]}: ${peer.calls} model calls`,
-      ),
-      renderApplied(result),
-    ]
-      .filter(Boolean)
-      .join('\n');
-  }
-  return [
-    result.reused ? 'Existing collaboration ready.' : 'Collaboration started.',
-    `Project: ${result.root}`,
-    `Goal: ${goal}`,
-    '',
-    `Open the session: model-collab attach --repo ${quote(result.root)}`,
-    'Switch peer panes: Ctrl-b o. Open controls: Ctrl-b n. Detach: Ctrl-b d.',
-  ].join('\n');
 }
 
-function renderApplied({ winner, applied }) {
-  if (!winner)
-    return 'No candidate was agreed. Review the alternatives with model-collab status --human.';
-  if (applied?.error) return `Agreed on ${winner}, but it was not applied: ${applied.error}`;
-  if (applied)
-    return `Agreed on ${winner} and applied it to your working tree: ${applied.files.join(', ') || 'no file changes'}.`;
-  return `Agreed on ${winner}.`;
-}
-
-export function renderStatus(state) {
-  const session = state.session;
-  if (!session) return 'No active goal. Start one with model-collab up "Your goal".';
+export function renderResult(run) {
+  const usage = run.agents.reduce(
+    (sum, a) => ({
+      tokens: sum.tokens + a.usage.inputTokens + a.usage.outputTokens,
+      cost: sum.cost + (a.usage.costUsd ?? 0),
+      sessions: sum.sessions + a.sessions,
+    }),
+    { tokens: 0, cost: 0, sessions: 0 },
+  );
+  const result = run.result;
   const lines = [
-    `Goal: ${session.topic}`,
-    `Status: ${session.status}`,
-    `Round: ${session.round} of ${state.config.maxRounds}`,
+    `Run ${run.status}: ${run.stopReason ?? 'no reason recorded'}`,
+    `${run.agents.length} agents, ${usage.sessions} sessions, ${Math.round(usage.tokens / 1000)}k tokens${usage.cost ? `, $${usage.cost.toFixed(2)} reported by Claude Code` : ''}.`,
   ];
-  if (session.stopReason) lines.push(`Reason: ${session.stopReason}`);
-  if (session.winner || session.status === 'converged') lines.push(renderApplied(session));
-  if (state.board?.posts)
+  if (!result) return lines.join('\n');
+  lines.push(
+    `${result.commits} commits on the swarm's main; its history is in refs/model-collab/result.`,
+  );
+  if (result.applied)
+    lines.push(`Applied to your working tree: ${result.applied.join(', ') || 'no file changes'}.`);
+  else if (result.error) lines.push(`Not applied: ${result.error}`);
+  else if (result.commits)
     lines.push(
-      `Board: ${state.board.posts} post${state.board.posts === 1 ? '' : 's'} in ${state.board.channels.map((c) => c.name).join(', ')}`,
-    );
-  const recent = session.messages.slice(-4);
-  if (recent.length)
-    lines.push(
-      '',
-      'Recent contributions:',
-      ...recent.map((message) => `  ${message.agent}: ${message.summary}`),
+      `Not applied, because the run ${run.status === 'finished' ? 'changed nothing' : `ended as ${run.status}`}. Review it with git diff HEAD refs/model-collab/result, then run model-collab apply to take it.`,
     );
   return lines.join('\n');
 }
 
-export function renderWorkerEvent(event) {
-  if (event.event === 'thinking') return `[${event.agent}] Working on round ${event.round}.`;
-  if (event.event === 'sent' || event.event === 'message')
-    return `[${event.agent}] ${event.kind}: ${event.summary}`;
-  if (event.event === 'rejected')
-    return `[${event.agent}] Message rejected; asking for one correction: ${event.reason}`;
-  if (event.event === 'discarded')
-    return `[${event.agent}] Discarded a turn prepared before your latest note.`;
-  if (event.event === 'memory') {
-    if (event.status === 'updating')
-      return event.when === 'before'
-        ? 'Updating project memory from the previous goal.'
-        : 'Updating project memory from this goal.';
-    if (event.status === 'failed')
-      return `Project memory was not updated: ${event.error} Run model-collab memory update to retry.`;
-    const skipped = event.skipped
-      ? ` Skipped ${event.skipped} older goal(s); an update remembers at most three.`
-      : '';
-    return event.changed
-      ? `Project memory updated: .collab/MEMORY.md.${skipped}`
-      : `Project memory unchanged; nothing durable to add.${skipped}`;
-  }
-  if (event.event === 'cancelled')
-    return `[${event.agent}] Stopped its turn early; the session is ${event.reason}.`;
-  return null;
-}
-
-const postLine = (post) =>
-  `${post.id} · #${post.channel} · ${post.author} · ${post.createdAt}${post.thread !== post.id ? ` · reply in ${post.thread}` : ''}\n  ${post.text.replaceAll('\n', '\n  ')}${post.truncated ? ' [...]' : ''}`;
-
-export function renderBoardPosts({ results, hasMore, nextCursor }) {
-  if (!results.length) return 'No posts.';
-  return [
-    ...results.map(postLine),
-    ...(hasMore ? [`More results: --cursor ${nextCursor}`] : []),
-  ].join('\n\n');
-}
-
-export function renderBoardThreads({ results, hasMore, nextCursor }) {
-  if (!results.length) return 'No threads.';
-  return [
-    ...results.map(
-      (t) =>
-        `${postLine(t.root)}\n  ${t.replies} ${t.replies === 1 ? 'reply' : 'replies'}, last activity ${t.lastActivityAt}`,
+export function renderStatus(state) {
+  const run = state.run;
+  if (!run) return 'No run yet. Start one with model-collab up "Your goal".';
+  const minutesLeft = Math.max(0, Math.round((Date.parse(run.deadlineAt) - Date.now()) / 60000));
+  const lines = [
+    `Run ${run.id}: ${run.status}${run.stopReason ? ` (${run.stopReason})` : ''}`,
+    `Goal: ${oneLine(run.goal, 300)}`,
+    ['starting', 'running'].includes(run.status)
+      ? `Deadline ${run.deadlineAt}, about ${minutesLeft} minutes left.`
+      : `Ended ${run.endedAt ?? 'unknown'}.`,
+    '',
+    ...run.agents.map(
+      (a) =>
+        `  ${a.id.padEnd(10)} ${a.state.padEnd(8)} ${String(a.sessions).padStart(3)} sessions  ${tokens(a.usage).padStart(12)}${a.rateLimited ? `  rate limited ${a.rateLimited}x` : ''}  ${oneLine(a.retiredReason ?? a.lastSummary ?? '', 90)}`,
     ),
-    ...(hasMore ? [`More threads: --cursor ${nextCursor}`] : []),
-  ].join('\n\n');
+  ];
+  if (run.checkRounds.length) {
+    const last = run.checkRounds.at(-1);
+    lines.push(
+      '',
+      `Checks on ${last.commit.slice(0, 8)}: ${last.results.map((r) => `${r.name} ${r.passed ? 'passed' : 'failed'}`).join(', ')}`,
+    );
+  }
+  if (run.result) lines.push('', renderResult(run));
+  return lines.join('\n');
 }

@@ -2,10 +2,13 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { runCommand } from './process.js';
 
-// Flags the unattended workers and the memory update pass; older CLIs lack them.
+// Flags the agent sessions and the memory update pass need; older CLIs lack them.
 const REQUIRED_FLAGS = {
-  codex: { help: ['exec', '--help'], flags: ['--ignore-rules', '--output-schema'] },
-  claude: { help: ['--help'], flags: ['--permission-prompts', '--safe-mode', '--json-schema'] },
+  codex: { help: ['exec', '--help'], flags: ['--ignore-rules', '--output-schema', '--add-dir'] },
+  claude: {
+    help: ['--help'],
+    flags: ['--permission-prompts', '--safe-mode', '--json-schema', '--add-dir'],
+  },
 };
 
 async function toolCheck(run, command, flag, remedy) {
@@ -38,7 +41,7 @@ export async function doctor({ root = process.cwd(), run = runCommand } = {}) {
     ...(await Promise.all(
       [
         ['git', '--version', 'Install Git, then run this check again.'],
-        ['tmux', '-V', 'Install tmux, then run this check again.'],
+        ['swarmchat', '--version', 'Install SwarmChat with: uv tool install swarmchat==0.1.0'],
         ['codex', '--version', 'Install the Codex CLI and sign in with codex.'],
         ['claude', '--version', 'Install Claude Code and sign in with claude.'],
       ].map(([command, flag, remedy]) => toolCheck(run, command, flag, remedy)),
@@ -73,7 +76,7 @@ export async function doctor({ root = process.cwd(), run = runCommand } = {}) {
     ok: checks.every((check) => check.ok),
     root: directory ?? path.resolve(root),
     checks,
-    note: 'This checks local tools. Sign in to Codex and Claude Code before starting a collaboration.',
+    note: 'This checks local tools. Sign in to Codex and Claude Code before starting a run.',
   };
 }
 
@@ -86,7 +89,7 @@ export function renderDoctor(result) {
     ),
     '',
     result.ok
-      ? 'Ready to start a session.'
+      ? 'Ready to start a run.'
       : 'Resolve the missing requirements, then run model-collab doctor again.',
     result.note,
   ].join('\n');
