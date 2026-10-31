@@ -186,7 +186,10 @@ model-collab configure --gpu @gpu.json     # --gpu none removes it
   launcher's equivalent) before `{args}` so agents cannot pass launcher options.
 - Agents get only the IDs in `gpus`, never share one, and may ask for at most
   `maxMinutes` per job. A finished job frees its GPUs; a cancelled or lost job
-  keeps them until its time limit, in case its container still runs.
+  keeps them until its time limit, in case its container still runs, unless the
+  host has restarted since the job started (a preempted spot node, for example).
+  A launch whose MCP server exits before the job starts on the host frees its
+  GPUs; one that reached the host counts as lost.
 - The SSH key stays in the MCP server's process; agents never see it. The
   launcher is your containment: the tool adds none of its own on the host.
 

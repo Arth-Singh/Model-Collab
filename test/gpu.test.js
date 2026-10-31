@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { GpuJobs, jobCommand } from '../src/gpu.js';
 import { gpuSchema } from '../src/schema.js';
 import { Store } from '../src/store.js';
@@ -56,6 +57,12 @@ async function setup(t, overrides = {}) {
   });
   const run = { id: 'abcdef12-run', origin };
   return { root, remote, store, origin, gpu, jobs: (now) => new GpuJobs({ store, run, gpu, now }) };
+}
+
+async function deadPid() {
+  const child = spawn('true');
+  await new Promise((resolve) => child.on('exit', resolve));
+  return child.pid;
 }
 
 async function until(fn, ms = 10000) {
@@ -120,6 +127,7 @@ test('a job runs a pushed commit on reserved GPUs and its files can be read', as
     args: ['0', 'it has spaces', "quote's", '$HOME;rm -rf /'],
   });
   assert.equal(started.id, 'j1-claude-1');
+  assert.equal(started.launcher, process.pid);
   assert.deepEqual(started.gpus, [6]);
   const done = await until(async () => {
     const status = await gpu.status('j1-claude-1');
@@ -210,4 +218,69 @@ test('a failed prepare step or a missing dataset launches nothing', async (t) =>
     }),
     /Starting the job failed/,
   );
+});
+
+test('an abandoned launch frees its GPUs unless it reached the host', async (t) => {
+  const { origin, remote, store, jobs } = await setup(t);
+  const commit = await originHead(origin);
+  const launcher = await deadPid();
+  const now = Date.now();
+  const record = (id, gpus) => ({
+    id,
+    agent: 'codex-1',
+    commit,
+    gpus,
+    minutes: 5,
+    dataset: null,
+    args: [],
+    state: 'starting',
+    startedAt: new Date(now - 60_000).toISOString(),
+    deadlineAt: new Date(now + 15 * 60_000).toISOString(),
+    tree: path.join(remote, 'jobs', 'abcdef12', id),
+    launcher,
+    pid: null,
+    exitCode: null,
+    error: null,
+  });
+  // j1 never reached the host; j2 had started writing its log when its MCP server exited.
+  const records = [record('j1-codex-1', [6]), record('j2-codex-1', [7])];
+  await fs.mkdir(records[1].tree, { recursive: true });
+  await fs.writeFile(path.join(records[1].tree, 'job.log'), '');
+  await fs.writeFile(path.join(store.runDir, 'gpu-jobs.json'), JSON.stringify(records));
+  const listed = await jobs().list();
+  assert.deepEqual(
+    listed.jobs.map((j) => j.state),
+    ['failed_to_start', 'lost'],
+  );
+  assert.deepEqual(listed.free, [6], 'a launch that reached the host keeps its GPU');
+});
+
+test('a host restart frees the GPUs of every job that started before it', async (t) => {
+  const { origin, remote, store, jobs } = await setup(t);
+  const commit = await originHead(origin);
+  const tree = path.join(remote, 'jobs', 'abcdef12', 'j1-claude-1');
+  await fs.mkdir(tree, { recursive: true });
+  const job = {
+    id: 'j1-claude-1',
+    agent: 'claude-1',
+    commit,
+    gpus: [6, 7],
+    minutes: 5,
+    dataset: null,
+    args: [],
+    state: 'running',
+    // Before this machine's (the "local" host's) last boot.
+    startedAt: new Date(1_000).toISOString(),
+    deadlineAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+    tree,
+    launcher: process.pid,
+    pid: await deadPid(),
+    exitCode: null,
+    error: null,
+  };
+  await fs.writeFile(path.join(store.runDir, 'gpu-jobs.json'), JSON.stringify([job]));
+  const listed = await jobs().list();
+  assert.equal(listed.jobs[0].state, 'lost');
+  assert.equal(listed.jobs[0].hostRestarted, true);
+  assert.deepEqual(listed.free, [6, 7]);
 });

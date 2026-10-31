@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import lockfile from 'proper-lockfile';
-import { atomicWrite } from './store.js';
+import { alive, atomicWrite } from './store.js';
 
 // GPU jobs for agents. Agents have no network, so they cannot reach a GPU host
 // themselves. Their MCP server, which runs outside the sandbox, starts a job
@@ -17,8 +17,14 @@ const JOB_ID = /^j\d+-[a-z][a-z0-9_-]{0,31}$/;
 const DATASET = /^[A-Za-z0-9][A-Za-z0-9._-]{0,90}$/;
 const READ_LIMIT = 200_000;
 // A finished job's GPUs are free at once; a cancelled or lost one keeps them
-// until its time limit has passed, because its container may still run.
+// until its time limit has passed, because its container may still run, unless
+// the host has restarted since the job started.
 const GRACE_MS = 5 * 60_000;
+// A launch makes two host calls of at most 10 minutes each. A job still
+// "starting" after this, or whose launching MCP server has exited, was abandoned.
+const LAUNCH_MS = 21 * 60_000;
+// The host's boot time in seconds since the epoch, on Linux and on macOS.
+const BOOT_TIME = `if [ -r /proc/stat ]; then awk '/^btime/ {print $2}' /proc/stat; else sysctl -n kern.boottime | sed 's/^{ sec = \\([0-9]*\\).*/\\1/'; fi`;
 
 const fail = (message) => {
   throw new Error(message);
@@ -127,7 +133,58 @@ export class GpuJobs {
   /** Whether a job still holds its GPUs. */
   holds(job) {
     if (job.state === 'finished' || job.state === 'failed_to_start') return false;
+    if (job.hostRestarted) return false;
     return this.now() < Date.parse(job.deadlineAt) + GRACE_MS;
+  }
+
+  abandoned(job) {
+    return (
+      job.state === 'starting' &&
+      (!alive(job.launcher) || this.now() - Date.parse(job.startedAt) > LAUNCH_MS)
+    );
+  }
+
+  /**
+   * Settle jobs whose records the host has overtaken: a launch whose MCP server
+   * exited before it recorded a pid, and jobs that a host restart ended. One
+   * host call; nothing changes while the host is unreachable.
+   */
+  async reconcile() {
+    const jobs = await this.jobs();
+    const abandoned = jobs.filter((j) => this.abandoned(j));
+    if (!abandoned.length && !jobs.some((j) => this.holds(j) && j.state !== 'starting')) return;
+    const probes = abandoned.map(
+      (j) => `if [ -e ${quote(j.tree)}/job.log ]; then echo launched; else echo none; fi`,
+    );
+    const result = await this.shell(this.gpu, [BOOT_TIME, ...probes].join('; '));
+    if (result.code !== 0) return;
+    const [boot, ...launched] = result.stdout.trim().split('\n');
+    const bootedAt = Number(boot) * 1000;
+    if (!Number.isFinite(bootedAt) || launched.length !== abandoned.length) return;
+    const changes = new Map(
+      abandoned.map((j, i) => [
+        j.id,
+        launched[i] === 'launched'
+          ? { state: 'lost', error: 'Its MCP server exited before the job reported its process.' }
+          : {
+              state: 'failed_to_start',
+              error: 'Its MCP server exited before the job started; nothing runs on the host.',
+            },
+      ]),
+    );
+    await this.locked(async () => {
+      const current = await this.jobs();
+      for (const job of current) {
+        const change = changes.get(job.id);
+        if (change && job.state === 'starting') Object.assign(job, change);
+        if (this.holds(job) && job.state !== 'starting' && Date.parse(job.startedAt) < bootedAt)
+          Object.assign(job, {
+            state: job.state === 'running' ? 'lost' : job.state,
+            hostRestarted: true,
+          });
+      }
+      await this.save(current);
+    });
   }
 
   freeGpus(jobs) {
@@ -145,6 +202,7 @@ export class GpuJobs {
    */
   async start({ agent, commit, gpus = 1, minutes, dataset, args }) {
     if (!Number.isInteger(gpus) || gpus < 1) fail('Ask for at least one GPU.');
+    await this.reconcile();
     const limit = this.gpu.maxMinutes;
     minutes = Math.min(minutes ?? limit, limit);
     if (!(minutes > 0)) fail('A job needs a positive time limit.');
@@ -174,6 +232,7 @@ export class GpuJobs {
         startedAt: new Date(this.now()).toISOString(),
         deadlineAt: new Date(this.now() + (minutes + 10) * 60_000).toISOString(),
         tree: this.tree(id),
+        launcher: process.pid,
         pid: null,
         exitCode: null,
         error: null,
@@ -269,6 +328,7 @@ export class GpuJobs {
 
   /** Every job of this run, refreshing the ones still running. */
   async list() {
+    await this.reconcile();
     const jobs = await this.jobs();
     const out = [];
     for (const job of jobs) {
